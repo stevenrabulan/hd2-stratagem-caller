@@ -1,6 +1,8 @@
 # Direct Key inside the Arming Window should not press the Call Key
 
-**Status:** not planned yet. Do only if it turns out to be cheap.
+Status: needs-triage
+
+Not planned yet. Do only if it turns out to be cheap.
 
 ## Problem
 
@@ -12,4 +14,4 @@ If a Direct Key is pressed while the Arming Window is open, skip the Call Key pr
 
 ## Out of scope
 
-Any other case where the menu is already open (for example, opened more than a second ago). Direct Keys stay blind there by design; see [ADR 0001](../adr/0001-read-codes-from-the-screen.md).
+Any other case where the menu is already open (for example, opened more than a second ago). Direct Keys stay blind there by design; see [ADR 0001](../../../docs/adr/0001-read-codes-from-the-screen.md).
