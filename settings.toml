@@ -1,0 +1,50 @@
+# Stratagem Caller settings. Restart the tool after editing.
+#
+# Key names: letters and digits as typed ("b", "1"), or names such as "up",
+# "page down", "home", "f5", "caps lock". Numpad keys are not supported.
+
+# The key bound in-game to open the Stratagem Menu. Must be set to toggle
+# (press), not hold, in the game's settings.
+call_key = "b"
+
+# The tool only acts while a window with exactly this title is focused.
+window_title = "HELLDIVERS™ 2"
+
+# Stops and resumes the tool without closing it.
+pause_key = "ctrl+alt+p"
+
+# How long after the Call Key a Trigger Key is acted on.
+arming_window_ms = 1000
+
+# Random range for how long each key is held, and for the gap before the next.
+keystroke_ms = [31, 62]
+
+# Direct Keys only: random pause between pressing the Call Key and typing the
+# Code. Raise this if the game drops the first direction.
+direct_key_pause_ms = [31, 62]
+
+# The keys bound in-game to enter stratagem directions.
+[direction_keys]
+U = "up"
+D = "down"
+L = "left"
+R = "right"
+
+# Trigger Keys: key = Slot (1 is the top of the Stratagem Menu).
+# Used after pressing the Call Key yourself.
+[trigger_keys]
+"1" = 1
+"2" = 2
+"3" = 3
+"4" = 4
+"5" = 5
+"6" = 6
+"7" = 7
+"8" = 8
+"9" = 9
+"0" = 10
+
+# Direct Keys: key = a name from codebook.toml, or a Code written as U/D/L/R.
+# One press opens the menu and calls it. These keys never reach the game.
+[direct_keys]
+"page down" = "Reinforce"

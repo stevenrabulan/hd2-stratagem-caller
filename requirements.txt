@@ -1,0 +1,5 @@
+keyboard==0.13.5
+mss==10.2.0
+numpy
+opencv-python-headless
+pytest

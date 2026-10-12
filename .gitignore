@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+.pytest_cache/
+# Full-screen captures: large, and may show the desktop.
+fixtures/raw/
