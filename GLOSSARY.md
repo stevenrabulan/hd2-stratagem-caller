@@ -36,7 +36,7 @@ The four keys the player has bound in-game to enter the directions of a Code.
 _Avoid_: Arrow keys, stratagem arrows
 
 **Trigger Key**:
-A key that chooses a Slot when pressed inside the Arming Window, after the player has pressed the Call Key themselves. Digits by default.
+A key that chooses a Slot when pressed while the Stratagem Menu is open (inside the Arming Window), after the player has pressed the Call Key themselves. Digits by default.
 _Avoid_: Hotkey, number key, bind
 
 **Direct Key**:
@@ -48,7 +48,7 @@ The editable list of known Stratagem names and their Codes that Direct Keys can 
 _Avoid_: Hardcoded list, database, table
 
 **Arming Window**:
-The time during which the tool sees the Stratagem Menu open and so acts on Trigger Keys. Outside it, Trigger Keys behave as ordinary keys.
+The time from when the tool confirms the Stratagem Menu is open after a Call Key press until it confirms the menu has closed, however long that is, and so acts on Trigger Keys. Outside it, Trigger Keys behave as ordinary keys.
 _Avoid_: Timeout, listen window, one-second window
 
 **Call**:

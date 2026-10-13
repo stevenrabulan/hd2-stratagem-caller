@@ -2,7 +2,7 @@
 
 A companion tool for Helldivers 2. It reads the Stratagem Menu off the screen and lets you call a Stratagem with one key instead of typing its arrow code.
 
-- **Trigger Keys**: press your Call Key, then a digit within one second, to call the Stratagem in that Slot (1 = top of the menu). Codes are read from the screen, so new or temporary Stratagems work without an update.
+- **Trigger Keys**: press your Call Key, then a digit while the menu is open, to call the Stratagem in that Slot (1 = top of the menu). Codes are read from the screen, so new or temporary Stratagems work without an update.
 - **Direct Keys**: one key calls one specific Stratagem (for example PageDown for Reinforce), using a Code you configure by name from [codebook.toml](codebook.toml) or write out yourself.
 
 Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/adr](docs/adr).
@@ -17,7 +17,7 @@ Start it before or during a mission, and leave the terminal open:
 .venv\Scripts\python.exe -m stratagem_caller
 ```
 
-- Press the Call Key, then `1`–`9` or `0` within a second. The Call happens about a quarter second after the Call Key, once the menu has finished sliding in.
+- Press the Call Key, then `1`–`9` or `0` while the menu is open. The Call happens about a quarter second after the Call Key, once the menu has finished sliding in.
 - A low beep means that Slot has no Stratagem you can call right now (cooldown, inbound, or empty).
 - `Ctrl+Alt+P` pauses and resumes. `Ctrl+C` in the terminal quits.
 - Keys, timing and Direct Keys are set in [settings.toml](settings.toml).
