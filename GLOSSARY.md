@@ -48,8 +48,8 @@ The editable list of known Stratagem names and their Codes that Direct Keys can 
 _Avoid_: Hardcoded list, database, table
 
 **Arming Window**:
-The one second after the Call Key is pressed during which a Trigger Key is acted on. Outside it, Trigger Keys behave as ordinary keys.
-_Avoid_: Timeout, listen window
+The time during which the tool sees the Stratagem Menu open and so acts on Trigger Keys. Outside it, Trigger Keys behave as ordinary keys.
+_Avoid_: Timeout, listen window, one-second window
 
 **Call**:
 Entering a Slot's Code on the player's behalf.

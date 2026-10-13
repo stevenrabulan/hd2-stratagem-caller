@@ -4,6 +4,7 @@ import random
 import threading
 import time
 import winsound
+from collections.abc import Callable
 from pathlib import Path
 
 from . import winkeys
@@ -15,11 +16,14 @@ import mss  # noqa: E402
 import numpy as np  # noqa: E402
 
 from .arming import ArmingWindow  # noqa: E402
+from .eventlog import EventLog  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
+from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
 from .winkeys import Key  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+LOG_PATH = ROOT / "logs" / "stratagem_caller.log"
 
 # Reading the menu before it has started to slide in is wasted work.
 FIRST_READING_DELAY = 0.15
@@ -27,73 +31,41 @@ READING_INTERVAL = 0.02
 
 
 class App:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, log: Callable[[str], None] = lambda text: None):
         self.settings = settings
         self.call_key = Key.named(settings.call_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
-        self.trigger_keys = {Key.named(k): slot for k, slot in settings.trigger_keys.items()}
-        self.direct_keys = {Key.named(k): code for k, code in settings.direct_keys.items()}
 
-        self._lock = threading.Lock()
-        self._window: ArmingWindow | None = None
-        self._window_trigger: Key | None = None
         # Set while the tool is typing, so it doesn't react to its own keys.
         self._sending = threading.Event()
         self._send_lock = threading.Lock()
-        self._paused = False
-        self._held: set[tuple[int, bool]] = set()
-        self._swallowed: set[tuple[int, bool]] = set()
+        self.router = KeyRouter(
+            call_key=self.call_key,
+            direct_keys={Key.named(k): code for k, code in settings.direct_keys.items()},
+            trigger_keys={Key.named(k): slot for k, slot in settings.trigger_keys.items()},
+            window_title=settings.window_title,
+            arming_length=settings.arming_window_ms / 1000,
+            clock=time.monotonic,
+            foreground_title=winkeys.foreground_title,
+            is_sending=self._sending.is_set,
+            log=log,
+        )
 
     # --- keyboard hook (must return quickly; True lets the key through) ---
 
     def on_event(self, event: keyboard.KeyboardEvent) -> bool:
-        ident = (event.scan_code, event.is_keypad)
-        if event.event_type == keyboard.KEY_UP:
-            self._held.discard(ident)
-            if ident in self._swallowed:
-                self._swallowed.discard(ident)
-                return False
-            return True
-        repeat = ident in self._held
-        self._held.add(ident)
-        if repeat:
-            return ident not in self._swallowed
-        if self._sending.is_set() or self._paused:
-            return True
-        if winkeys.foreground_title() != self.settings.window_title:
-            return True
-
-        if self.call_key.matches(event):
-            self._on_call_key()
-            return True
-        for key, code in self.direct_keys.items():
-            if key.matches(event):
-                self._swallowed.add(ident)
-                threading.Thread(target=self._direct_call, args=(code,), daemon=True).start()
-                return False
-        for key, slot in self.trigger_keys.items():
-            if key.matches(event):
-                with self._lock:
-                    taken = self._window is not None and self._window.press(
-                        slot, time.monotonic()
-                    )
-                    if taken:
-                        self._window_trigger = key
-                if taken:
-                    self._swallowed.add(ident)
-                    return False
-        return True
-
-    def _on_call_key(self) -> None:
-        with self._lock:
-            if self._window is not None:
-                # The Call Key toggles: a second press closes the menu.
-                self._window = None
-                return
-            window = ArmingWindow(time.monotonic(), self.settings.arming_window_ms / 1000)
-            self._window = window
-            self._window_trigger = None
-        threading.Thread(target=self._watch_menu, args=(window,), daemon=True).start()
+        decision = self.router.handle(
+            KeyEvent(event.scan_code, event.is_keypad, event.event_type, event.time)
+        )
+        if decision.start_watching is not None:
+            threading.Thread(
+                target=self._watch_menu, args=(decision.start_watching,), daemon=True
+            ).start()
+        if decision.direct_code is not None:
+            threading.Thread(
+                target=self._direct_call, args=(decision.direct_code,), daemon=True
+            ).start()
+        return decision.let_through
 
     # --- worker threads ---
 
@@ -107,16 +79,12 @@ class App:
             while outcome is None:
                 region = np.asarray(sct.grab(area))[:, :, :3]
                 codes = read_menu(region, monitor["height"]).codes
-                with self._lock:
-                    if self._window is not window:
-                        return
-                    outcome = window.offer(codes, time.monotonic())
+                if not self.router.is_current(window):
+                    return
+                outcome = self.router.offer(window, codes)
                 if outcome is None:
                     time.sleep(READING_INTERVAL)
-        with self._lock:
-            trigger = self._window_trigger
-            if self._window is window:
-                self._window = None
+        trigger = self.router.finish(window, outcome)
         if outcome.kind == "call":
             self._type(outcome.code)
         elif outcome.kind == "beep":
@@ -137,8 +105,7 @@ class App:
                 self._tap_code(code)
             finally:
                 self._sending.clear()
-        with self._lock:
-            self._window = None
+        self.router.close_window()
 
     def _type(self, code: str) -> None:
         with self._send_lock:
@@ -161,16 +128,16 @@ class App:
     # --- pause ---
 
     def toggle_pause(self) -> None:
-        self._paused = not self._paused
-        with self._lock:
-            self._window = None
-        winsound.Beep(440 if self._paused else 880, 120)
-        print("paused" if self._paused else "resumed")
+        self.router.paused = not self.router.paused
+        self.router.close_window()
+        winsound.Beep(440 if self.router.paused else 880, 120)
+        print("paused" if self.router.paused else "resumed")
 
 
 def main() -> None:
     settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
-    app = App(settings)
+    log = EventLog(LOG_PATH)
+    app = App(settings, log.write)
     with mss.MSS() as sct:
         height = sct.monitors[1]["height"]
     print(f"Stratagem Caller running. Screen height {height}.")
@@ -180,6 +147,7 @@ def main() -> None:
     for key, code in settings.direct_keys.items():
         print(f"  Direct Key [{key}] -> {code}")
     print(f"  [{settings.pause_key}] pause/resume, Ctrl+C here to quit")
+    print(f"  Logging Trigger Keys and Calls to {LOG_PATH}")
     keyboard.hook(app.on_event, suppress=True)
     keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
     try:
