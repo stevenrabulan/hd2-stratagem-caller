@@ -27,7 +27,6 @@ LOG_PATH = ROOT / "logs" / "stratagem_caller.log"
 
 # Reading the menu before it has started to slide in is wasted work.
 FIRST_READING_DELAY = 0.15
-READING_INTERVAL = 0.05  # a simple fixed rate; ticket 05 makes it slower once the menu is confirmed
 
 
 class App:
@@ -72,39 +71,49 @@ class App:
     # --- worker threads ---
 
     def _watch_menu(self, window: ArmingWindow) -> None:
-        """Read the menu until the Arming Window ends (a Call, a hand back, or the menu closing)."""
-        with mss.MSS() as sct:
-            monitor = sct.monitors[1]
-            width, height = region_size(monitor["height"])
-            area = {"left": monitor["left"], "top": monitor["top"], "width": width, "height": height}
-            time.sleep(FIRST_READING_DELAY)
-            while True:
-                region = np.asarray(sct.grab(area))[:, :, :3]
-                reading = read_menu(region, monitor["height"])
-                if not self.router.is_current(window):
-                    return
-                outcome = self.router.offer(window, reading)
-                if outcome is not None:
-                    trigger = self.router.finish(window, outcome)
-                    if outcome.kind == "beep":
-                        threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
-                    else:
-                        self._act(outcome, trigger)
-                        return
-                time.sleep(READING_INTERVAL)
+        """Read the menu until the Arming Window ends: a Call, a hand back, the menu closing,
+        the game losing focus, the safety limit, or a pause (which drops the window, so
+        `is_current` turns false). Always returns when the watch is over."""
+        try:
+            with mss.MSS() as sct:
+                monitor = sct.monitors[1]
+                width, height = region_size(monitor["height"])
+                area = {"left": monitor["left"], "top": monitor["top"], "width": width, "height": height}
+                time.sleep(FIRST_READING_DELAY)
+                while self.router.is_current(window):
+                    region = np.asarray(sct.grab(area))[:, :, :3]
+                    reading = read_menu(region, monitor["height"])
+                    outcome = self.router.offer(window, reading)
+                    if outcome is not None:
+                        trigger = self.router.finish(window, outcome)
+                        if outcome.kind == "beep":
+                            threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
+                        else:
+                            self._act(outcome, trigger)
+                            return
+                    time.sleep(self.router.reading_delay(window))
+        finally:
+            # An error must not leave a watch with no worker (the next Call Key press would
+            # only restart it). A no-op when the watch already ended.
+            self.router.end_watch("reading stopped", only=window)
 
     def _act(self, outcome: Outcome, trigger: Key | None = None) -> None:
         if outcome.kind == "call":
             self._type(outcome.code)
         elif outcome.kind == "beep":
             winsound.Beep(330, 150)
-        elif outcome.kind == "pass" and trigger is not None:
-            with self._send_lock:
-                self._sending.set()
-                try:
-                    self._tap(trigger)
-                finally:
-                    self._sending.clear()
+        elif outcome.kind in ("pass", "limit") and trigger is not None:
+            self._hand_back(trigger)
+        # "closed" and "focus" need nothing: a key held when focus was lost is not
+        # sent to whatever window has focus now.
+
+    def _hand_back(self, trigger: Key) -> None:
+        with self._send_lock:
+            self._sending.set()
+            try:
+                self._tap(trigger)
+            finally:
+                self._sending.clear()
 
     def _direct_call(self, code: str) -> None:
         with self._send_lock:
@@ -138,7 +147,11 @@ class App:
 
     def toggle_pause(self) -> None:
         self.router.paused = not self.router.paused
-        self.router.close_window()
+        # Runs on the pause hotkey's thread; the worker sees the watch is gone and exits.
+        # A Trigger Key still held is given back to the game.
+        held = self.router.end_watch("paused") if self.router.paused else None
+        if held is not None:
+            threading.Thread(target=self._hand_back, args=(held,), daemon=True).start()
         winsound.Beep(440 if self.router.paused else 880, 120)
         print("paused" if self.router.paused else "resumed")
 
