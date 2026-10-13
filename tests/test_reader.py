@@ -84,3 +84,51 @@ def test_lone_arrow_while_sliding_in_gives_no_code():
 )
 def test_status_text_or_closed_menu_is_not_unreadable(name):
     assert _read(name).unreadable == set()
+
+
+OPEN_MENUS = [
+    "some_on_cooldown",
+    "mission_stratagem_inserted",
+    "resupply_available",
+    "seven_arrow_code_at_slot_3",
+    "one_direction_entered",
+    "glow_behind_last_arrow",
+    "glow_gone_same_menu",
+    "open_menu_nothing_callable",
+]
+
+
+@pytest.mark.parametrize("name", OPEN_MENUS)
+def test_settled_open_menu_reports_open(name):
+    assert _read(name).menu_open
+
+
+def test_open_menu_with_nothing_callable_is_open_with_no_codes():
+    reading = _read("open_menu_nothing_callable")
+    assert reading.menu_open
+    assert reading.codes == {}
+    assert reading.unreadable == set()
+
+
+def test_closed_menu_over_bright_sky_reports_closed():
+    assert not _read("menu_closed_bright_sky").menu_open
+
+
+def test_menu_still_sliding_in_does_not_report_open_yet():
+    # The rows are not in place, so the menu is not open yet; a user waiting for
+    # an open menu keeps waiting.
+    assert not _read("menu_sliding_in").menu_open
+    assert not _read("lone_arrow_while_sliding_in").menu_open
+
+
+def test_a_row_showing_without_the_menu_open_is_not_an_open_menu():
+    # The game briefly shows a single row (here Resupply coming off cooldown)
+    # beside the collapsed header while the menu is closed.
+    assert not _read("closed_menu_one_row_showing").menu_open
+
+
+def test_menu_with_only_reinforce_available_is_open():
+    # A dead player's menu lists only Reinforce, with its Code.
+    reading = _read("open_menu_only_reinforce")
+    assert reading.menu_open
+    assert reading.codes == {1: "UDRLU"}

@@ -26,6 +26,14 @@ ICON_SIZE = 86.0
 MAX_SLOTS = 10
 MAX_ARROWS = 8
 
+# An Icon is a square whose four edges are sharp against the menu behind it.
+# Each edge counts when most of its length differs this much (summed over the
+# colour channels) from the pixels just outside it.
+ICON_EDGE_CONTRAST = 40
+ICON_EDGE_SHARE = 0.6
+# The menu counts as open when this many neighbouring Slots show an Icon in place.
+ICONS_FOR_OPEN_MENU = 4
+
 # Callable arrows are pure white; dimmed, entered (yellow) and background pixels fall below this.
 WHITE_THRESHOLD = 225
 
@@ -42,11 +50,17 @@ class Reading:
       cannot be trusted. A shortened Code is never returned for such a Slot;
     - anything else: not callable. The game shows a status such as a cooldown
       timer in place of the arrows, and the Slot is in neither collection.
+
+    `menu_open` says whether the Stratagem Menu is open, whatever the Slots
+    are: a menu in which every Stratagem is on cooldown is open with no Codes.
+    A menu still sliding in, or the single row the game flashes up beside the
+    collapsed header while the menu is closed, is not open.
     """
 
     codes: dict[int, str] = field(default_factory=dict)
     unreadable: set[int] = field(default_factory=set)
     icons: dict[int, np.ndarray] = field(default_factory=dict)
+    menu_open: bool = False
 
 
 def region_size(screen_height: int) -> tuple[int, int]:
@@ -114,7 +128,51 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
         left = round(ICON_LEFT * scale)
         size = round(ICON_SIZE * scale)
         icons[slot] = region[top : top + size, left : left + size].copy()
-    return Reading(codes=codes, unreadable=unreadable, icons=icons)
+    return Reading(
+        codes=codes,
+        unreadable=unreadable,
+        icons=icons,
+        menu_open=_menu_open(region, scale, codes),
+    )
+
+
+def _menu_open(region: np.ndarray, scale: float, codes: dict[int, str]) -> bool:
+    """An open menu is a column of Icons in their places. Rows that are still
+    sliding in have no Icon in place yet, and a closed menu shows at most a few
+    separate rows, as they come off cooldown. The only open menu that small is a dead player's, which lists Reinforce
+    (Slot 1) alone, with its Code."""
+    run = longest = 0
+    for slot in range(1, MAX_SLOTS + 1):
+        run = run + 1 if _icon_in_place(region, slot, scale) else 0
+        longest = max(longest, run)
+    return longest >= ICONS_FOR_OPEN_MENU or 1 in codes
+
+
+def _icon_in_place(region: np.ndarray, slot: int, scale: float) -> bool:
+    """Whether all four edges of the Icon square of this Slot are sharp."""
+    top = round((ICON_TOP + (slot - 1) * SLOT_PITCH) * scale)
+    left = round(ICON_LEFT * scale)
+    size = round(ICON_SIZE * scale)
+    near = max(1, round(scale))  # first pixel off the edge, either side
+    band = max(3, round(3 * scale))
+    inset = max(2, round(6 * scale))
+    bottom, right = top + size, left + size
+    if top - near - band < 0 or bottom + near + band > region.shape[0] or right + near + band > region.shape[1]:
+        return False
+    img = region[:, :, :3].astype(np.int16)
+
+    def sharp(inside: np.ndarray, outside: np.ndarray) -> bool:
+        return (np.abs(inside - outside).sum(axis=-1) > ICON_EDGE_CONTRAST).mean() >= ICON_EDGE_SHARE
+
+    across = slice(left + inset, right - inset)
+    down = slice(top + inset, bottom - inset)
+    edges = (
+        (img[top + near : top + near + band, across], img[top - near - band : top - near, across], 0),
+        (img[bottom - near - band : bottom - near, across], img[bottom + near : bottom + near + band, across], 0),
+        (img[down, left + near : left + near + band], img[down, left - near - band : left - near], 1),
+        (img[down, right - near - band : right - near], img[down, right + near : right + near + band], 1),
+    )
+    return all(sharp(a.mean(axis=e), b.mean(axis=e)) for a, b, e in edges)
 
 
 def _slots_overlapped(x: int, y: int, w: int, h: int, area: int, scale: float) -> set[int]:
