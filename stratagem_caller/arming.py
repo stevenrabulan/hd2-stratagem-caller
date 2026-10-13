@@ -1,51 +1,123 @@
-"""The Arming Window: what to do with a Trigger Key given the Readings so far."""
+"""The Arming Window: what to do with a Trigger Key given the Readings so far.
+
+The window is open from a Call Key press until the Stratagem Menu is seen to
+close. It holds no keyboard, screen or clock: it is driven by Readings, key
+presses and the times they happened.
+"""
 
 from dataclasses import dataclass
 
-# The menu needs about a quarter second to slide in; a Slot is not written off
-# as uncallable before this long after the Call Key, nor this soon after the
-# Trigger Key.
-MENU_SETTLE = 0.6
-TRIGGER_GRACE = 0.35
+from .reader import Reading
+
+# After a Call Key press the menu may take this long to slide in and become
+# readable (the captures show 250 ms to 500 ms); not seeing it is not "closed" yet.
+OPENING_GRACE = 0.75
+# When the menu was already open the Call Key press is closing it, so there is
+# nothing to wait for beyond the closing animation's first frames.
+CLOSING_GRACE = 0.05
+# A Slot that stays unreadable this long after the menu opened (or the key was
+# pressed, whichever is later) earns a beep.
+UNREADABLE_LIMIT = 0.75
 
 
 @dataclass(frozen=True)
 class Outcome:
-    # "call": enter `code`. "beep": the Slot can't be called. "pass": no menu was
-    # seen, so hand the Trigger Key back to the game. "expired": nothing was pressed.
+    # "call": enter `code`. "beep": the Slot can't be called, the watch goes on.
+    # "pass": no menu appeared, hand the held Trigger Key back to the game; the
+    # watch is over. "closed": the menu closed, the watch is over.
     kind: str
     code: str | None = None
 
 
+@dataclass(frozen=True)
+class Press:
+    # taken: the window has the Trigger Key (swallow it). outcome: decided at once.
+    taken: bool
+    outcome: Outcome | None = None
+
+
 class ArmingWindow:
-    def __init__(self, started: float, length: float):
-        self.started = started
-        self.deadline = started + length
-        self.slot: int | None = None
-        self._give_up_at = self.deadline
-        self._previous: dict[int, str] | None = None
-        self._seen_menu = False
+    def __init__(self, started: float):
+        self.done = False
+        self.slot: int | None = None  # the Trigger Key's Slot, while one is held
+        self._pending_since = 0.0
+        self.restart(started, menu_was_open=False)
 
-    def press(self, slot: int, now: float) -> bool:
-        """A Trigger Key went down. True if the window takes it (swallow the key)."""
-        if self.slot is not None or now >= self.deadline:
-            return False
-        self.slot = slot
-        self._give_up_at = min(
-            self.deadline, max(now + TRIGGER_GRACE, self.started + MENU_SETTLE)
-        )
-        return True
+    def restart(self, now: float, menu_was_open: bool | None = None) -> None:
+        """The Call Key was pressed again: the menu is opening or closing, so
+        nothing seen so far is trusted and any held Trigger Key is dropped."""
+        if menu_was_open is None:
+            menu_was_open = self._confirmed_open()
+        self._grace_end = now + (CLOSING_GRACE if menu_was_open else OPENING_GRACE)
+        self._previous: Reading | None = None
+        self._latest: Reading | None = None
+        self._open_since: float | None = None
+        self._not_open_readings = 0
+        self.slot = None
 
-    def offer(self, codes: dict[int, str], now: float) -> Outcome | None:
-        """Feed the Codes of a new Reading. Returns an Outcome once decided."""
-        # One Reading can catch the menu mid-animation; two equal ones in a row can't.
-        confirmed = bool(codes) and codes == self._previous
-        self._previous = codes
-        self._seen_menu = self._seen_menu or bool(codes)
+    def press(self, slot: int, now: float) -> Press:
+        """A Trigger Key went down."""
+        if self.done:
+            return Press(False)
+        outcome = self._resolve(slot)
+        if outcome is not None and outcome.kind == "call":
+            self.done = True
+        if outcome is None:
+            self.slot = slot
+            self._pending_since = now
+        else:
+            self.slot = None
+        return Press(True, outcome)
+
+    def offer(self, reading: Reading, now: float) -> Outcome | None:
+        """Feed a new Reading. Returns an Outcome once something is decided."""
+        if self.done:
+            return None
+        self._previous, self._latest = self._latest, reading
+        if reading.menu_open:
+            self._not_open_readings = 0
+        elif now >= self._grace_end:
+            self._not_open_readings += 1
+        else:
+            self._not_open_readings = 0
+        if self._open_since is None and self._confirmed_open():
+            self._open_since = now
+
+        if self._not_open_readings >= 2:
+            self.done = True
+            held, self.slot = self.slot, None
+            return Outcome("pass" if held is not None else "closed")
         if self.slot is None:
-            return Outcome("expired") if now >= self.deadline else None
-        if confirmed and self.slot in codes:
-            return Outcome("call", codes[self.slot])
-        if now >= self._give_up_at:
-            return Outcome("beep" if self._seen_menu else "pass")
+            return None
+        outcome = self._resolve(self.slot)
+        if outcome is None and self._open_since is not None:
+            waited_from = max(self._pending_since, self._open_since)
+            if now - waited_from >= UNREADABLE_LIMIT:
+                outcome = Outcome("beep")
+        if outcome is not None:
+            self.slot = None
+            if outcome.kind == "call":
+                self.done = True
+        return outcome
+
+    def _confirmed_open(self) -> bool:
+        # One Reading can catch the menu mid-animation; two in a row can't.
+        return (
+            self._previous is not None
+            and self._latest is not None
+            and self._previous.menu_open
+            and self._latest.menu_open
+        )
+
+    def _resolve(self, slot: int) -> Outcome | None:
+        """What the last two Readings settle for `slot`, if anything."""
+        if self._previous is None or self._latest is None:
+            return None
+        code = self._latest.codes.get(slot)
+        if code is not None and code == self._previous.codes.get(slot):
+            return Outcome("call", code)
+        if self._confirmed_open() and not any(
+            slot in r.codes or slot in r.unreadable for r in (self._previous, self._latest)
+        ):
+            return Outcome("beep")
         return None

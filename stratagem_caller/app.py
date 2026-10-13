@@ -15,7 +15,7 @@ import keyboard  # noqa: E402
 import mss  # noqa: E402
 import numpy as np  # noqa: E402
 
-from .arming import ArmingWindow  # noqa: E402
+from .arming import ArmingWindow, Outcome  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
@@ -27,7 +27,7 @@ LOG_PATH = ROOT / "logs" / "stratagem_caller.log"
 
 # Reading the menu before it has started to slide in is wasted work.
 FIRST_READING_DELAY = 0.15
-READING_INTERVAL = 0.02
+READING_INTERVAL = 0.05  # a simple fixed rate; ticket 05 makes it slower once the menu is confirmed
 
 
 class App:
@@ -44,7 +44,6 @@ class App:
             direct_keys={Key.named(k): code for k, code in settings.direct_keys.items()},
             trigger_keys={Key.named(k): slot for k, slot in settings.trigger_keys.items()},
             window_title=settings.window_title,
-            arming_length=settings.arming_window_ms / 1000,
             clock=time.monotonic,
             foreground_title=winkeys.foreground_title,
             is_sending=self._sending.is_set,
@@ -61,6 +60,9 @@ class App:
             threading.Thread(
                 target=self._watch_menu, args=(decision.start_watching,), daemon=True
             ).start()
+        if decision.outcome is not None:
+            # A Trigger Key decided at once from the Readings already taken.
+            threading.Thread(target=self._act, args=(decision.outcome,), daemon=True).start()
         if decision.direct_code is not None:
             threading.Thread(
                 target=self._direct_call, args=(decision.direct_code,), daemon=True
@@ -70,21 +72,28 @@ class App:
     # --- worker threads ---
 
     def _watch_menu(self, window: ArmingWindow) -> None:
-        outcome = None
+        """Read the menu until the Arming Window ends (a Call, a hand back, or the menu closing)."""
         with mss.MSS() as sct:
             monitor = sct.monitors[1]
             width, height = region_size(monitor["height"])
             area = {"left": monitor["left"], "top": monitor["top"], "width": width, "height": height}
             time.sleep(FIRST_READING_DELAY)
-            while outcome is None:
+            while True:
                 region = np.asarray(sct.grab(area))[:, :, :3]
-                codes = read_menu(region, monitor["height"]).codes
+                reading = read_menu(region, monitor["height"])
                 if not self.router.is_current(window):
                     return
-                outcome = self.router.offer(window, codes)
-                if outcome is None:
-                    time.sleep(READING_INTERVAL)
-        trigger = self.router.finish(window, outcome)
+                outcome = self.router.offer(window, reading)
+                if outcome is not None:
+                    trigger = self.router.finish(window, outcome)
+                    if outcome.kind == "beep":
+                        threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
+                    else:
+                        self._act(outcome, trigger)
+                        return
+                time.sleep(READING_INTERVAL)
+
+    def _act(self, outcome: Outcome, trigger: Key | None = None) -> None:
         if outcome.kind == "call":
             self._type(outcome.code)
         elif outcome.kind == "beep":
