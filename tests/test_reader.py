@@ -54,3 +54,33 @@ def test_icon_is_returned_for_each_readable_slot():
     reading = read_menu(region)
     assert set(reading.icons) == set(reading.codes)
     assert all(icon.shape == (86, 86, 3) for icon in reading.icons.values())
+
+
+def _read(name):
+    return read_menu(cv2.imread(str(FIXTURES / f"{name}.png")))
+
+
+def test_glow_behind_last_arrow_gives_no_shortened_code():
+    reading = _read("glow_behind_last_arrow")
+    resupply_slot = next(s for s in range(1, 11) if s in reading.unreadable)
+    assert resupply_slot not in reading.codes
+    assert reading.unreadable == {resupply_slot}
+
+
+def test_same_menu_without_glow_yields_the_full_code():
+    reading = _read("glow_gone_same_menu")
+    assert RESUPPLY in reading.codes.values()
+    assert reading.unreadable == set()
+
+
+def test_lone_arrow_while_sliding_in_gives_no_code():
+    reading = _read("lone_arrow_while_sliding_in")
+    assert reading.codes == {}
+    assert reading.unreadable
+
+
+@pytest.mark.parametrize(
+    "name", ["some_on_cooldown", "menu_closed_bright_sky", "menu_sliding_in", "one_direction_entered"]
+)
+def test_status_text_or_closed_menu_is_not_unreadable(name):
+    assert _read(name).unreadable == set()

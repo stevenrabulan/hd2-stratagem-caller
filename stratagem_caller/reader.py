@@ -24,6 +24,7 @@ ICON_LEFT = 105.0
 ICON_TOP = 162.0
 ICON_SIZE = 86.0
 MAX_SLOTS = 10
+MAX_ARROWS = 8
 
 # Callable arrows are pure white; dimmed, entered (yellow) and background pixels fall below this.
 WHITE_THRESHOLD = 225
@@ -33,11 +34,18 @@ WHITE_THRESHOLD = 225
 class Reading:
     """The Codes and Icons seen in the Stratagem Menu at one moment, by Slot.
 
-    Only Slots whose Stratagem can be called right now appear: the game shows a
-    status such as a cooldown timer in place of the arrows for the others.
+    Each Slot is in one of three states:
+
+    - callable: it appears in `codes` with its full Code (and in `icons`);
+    - unreadable: it appears in `unreadable`. Something bright is on its arrow
+      line that is not a recognisable arrow at a valid position, so the Code
+      cannot be trusted. A shortened Code is never returned for such a Slot;
+    - anything else: not callable. The game shows a status such as a cooldown
+      timer in place of the arrows, and the Slot is in neither collection.
     """
 
     codes: dict[int, str] = field(default_factory=dict)
+    unreadable: set[int] = field(default_factory=set)
     icons: dict[int, np.ndarray] = field(default_factory=dict)
 
 
@@ -56,17 +64,24 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
     # slot -> {arrow position in the Code: direction}
     found: dict[int, dict[int, str]] = {}
     rejected: set[int] = set()
+    other_bright: set[int] = set()
     for label in range(1, len(stats)):
         x, y, w, h, _area = (int(v) for v in stats[label])
         slot_pos = (y / scale - FIRST_ARROW_TOP) / SLOT_PITCH
         slot = round(slot_pos) + 1
+        overlapped = _slots_overlapped(x, y, w, h, _area, scale)
         if not 1 <= slot <= MAX_SLOTS or abs(slot_pos - round(slot_pos)) > 0.08:
+            # Not an arrow-shaped thing on a slot line, but if it still covers
+            # part of a line (a glow merged with an arrow) that line is clutter.
+            other_bright.update(overlapped)
             continue
         arrow_pos = (x / scale - FIRST_ARROW_LEFT) / ARROW_PITCH
         index = round(arrow_pos)
-        if index < -1:
-            continue
         direction = _direction(labels[y : y + h, x : x + w] == label, scale)
+        if index < -1:
+            if direction is not None:
+                rejected.add(slot)  # an arrow far left of the line: still sliding in
+            continue
         on_grid = abs(arrow_pos - index) <= 0.15
         if direction is None or not on_grid or index < 0:
             # Something white where an arrow line should be clean: a menu still
@@ -74,20 +89,49 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
             # means the whole line is shifted, so the Slot can't be trusted.
             if direction is not None:
                 rejected.add(slot)
+            else:
+                other_bright.update(overlapped)
             continue
         found.setdefault(slot, {})[index] = direction
 
     codes = {}
     icons = {}
+    unreadable: set[int] = set()
+    for slot in rejected:
+        unreadable.add(slot)
     for slot, arrows in sorted(found.items()):
-        if slot in rejected or sorted(arrows) != list(range(len(arrows))):
+        if slot in rejected:
             continue
+        if slot in other_bright:
+            # Some arrows recognised, but bright clutter on the line may hide
+            # the rest of the Code: wait for a clean view.
+            unreadable.add(slot)
+            continue
+        if sorted(arrows) != list(range(len(arrows))):
+            continue  # a gap: the player has entered part of the Code by hand
         codes[slot] = "".join(arrows[i] for i in range(len(arrows)))
         top = round((ICON_TOP + (slot - 1) * SLOT_PITCH) * scale)
         left = round(ICON_LEFT * scale)
         size = round(ICON_SIZE * scale)
         icons[slot] = region[top : top + size, left : left + size].copy()
-    return Reading(codes=codes, icons=icons)
+    return Reading(codes=codes, unreadable=unreadable, icons=icons)
+
+
+def _slots_overlapped(x: int, y: int, w: int, h: int, area: int, scale: float) -> set[int]:
+    """Slots whose arrow line a bright blob covers, ignoring specks and anything
+    left of the arrows (Icons, key hints)."""
+    left = x / scale
+    arrows_right = FIRST_ARROW_LEFT + MAX_ARROWS * ARROW_PITCH
+    if left < FIRST_ARROW_LEFT - ARROW_PITCH / 2 or left > arrows_right or area < 20 * scale * scale:
+        return set()
+    top, bottom = y / scale, (y + h) / scale
+    covered = set()
+    for slot in range(1, MAX_SLOTS + 1):
+        line_top = FIRST_ARROW_TOP + (slot - 1) * SLOT_PITCH
+        overlap = min(bottom, line_top + ARROW_SIZE) - max(top, line_top)
+        if overlap >= 0.3 * ARROW_SIZE:
+            covered.add(slot)
+    return covered
 
 
 def _direction(mask: np.ndarray, scale: float) -> str | None:
