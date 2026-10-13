@@ -13,9 +13,6 @@ window_title = "HELLDIVERS™ 2"
 # Stops and resumes the tool without closing it.
 pause_key = "ctrl+alt+p"
 
-# How long after the Call Key a Trigger Key is acted on.
-arming_window_ms = 1000
-
 # Random range for how long each key is held, and for the gap before the next.
 keystroke_ms = [31, 62]
 

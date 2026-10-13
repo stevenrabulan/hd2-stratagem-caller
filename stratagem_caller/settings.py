@@ -17,7 +17,6 @@ class Settings:
     direct_keys: dict[str, str]  # key name -> Code
     window_title: str
     pause_key: str
-    arming_window_ms: int
     keystroke_ms: tuple[int, int]
     direct_key_pause_ms: tuple[int, int]
 
@@ -59,7 +58,6 @@ def load(settings_path: Path, code_book_path: Path) -> Settings:
         },
         window_title=raw["window_title"],
         pause_key=raw["pause_key"],
-        arming_window_ms=int(raw["arming_window_ms"]),
         keystroke_ms=tuple(raw["keystroke_ms"]),
         direct_key_pause_ms=tuple(raw["direct_key_pause_ms"]),
     )
