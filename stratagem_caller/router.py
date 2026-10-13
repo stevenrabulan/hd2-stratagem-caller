@@ -61,8 +61,7 @@ class KeyRouter:
 
         self._lock = threading.Lock()
         self._window: ArmingWindow | None = None
-        self._window_trigger: "Key | None" = None  # the Trigger Key it took, and its Slot
-        self._window_slot: int | None = None
+        self._window_trigger: "Key | None" = None  # the Trigger Key it holds (its Slot is the window's)
         self._reading: Reading | None = None
         self._held: dict[Ident, float] = {}  # key -> time of its latest key-down
         self._swallowed: set[Ident] = set()
@@ -80,9 +79,9 @@ class KeyRouter:
         repeat = self._is_repeat(ident, event.time)
         self._held[ident] = event.time
         if repeat:
-            slot = self._trigger_slot(event)
-            if slot is not None:
-                self._log_trigger(slot, "ignored as repeat")
+            trigger = self._trigger_for(event)
+            if trigger is not None:
+                self._log_trigger(trigger[1], "ignored as repeat")
             return Decision(ident not in self._swallowed)
         # A key-down that is not a repeat starts afresh, whatever was recorded before.
         self._swallowed.discard(ident)
@@ -98,9 +97,9 @@ class KeyRouter:
                 self._swallowed.add(ident)
                 self._log(f"direct key {key.name}: Call {code}")
                 return Decision(False, direct_code=code)
-        for key, slot in self.trigger_keys.items():
-            if key.matches(event):
-                return self._on_trigger_key(ident, key, slot)
+        trigger = self._trigger_for(event)
+        if trigger is not None:
+            return self._on_trigger_key(ident, *trigger)
         return Decision(True)
 
     def _is_repeat(self, ident: Ident, now: float) -> bool:
@@ -110,24 +109,24 @@ class KeyRouter:
         last = self._held.get(ident)
         return last is not None and now - last <= REPEAT_GAP
 
-    def _trigger_slot(self, event: KeyEvent) -> int | None:
+    def _trigger_for(self, event: KeyEvent) -> "tuple[Key, int] | None":
         for key, slot in self.trigger_keys.items():
             if key.matches(event):
-                return slot
+                return key, slot
         return None
 
     def _on_call_key(self) -> ArmingWindow | None:
         with self._lock:
             if self._window is not None and not self._window.done:
                 # Already watching: the Call Key opens or closes the menu, and what is
-                # on screen decides which. The worker thread carries on.
+                # on screen decides which. The worker thread carries on, and a held
+                # Trigger Key stays held until the menu settles.
                 self._window.restart(self._clock())
-                self._window_trigger = self._window_slot = None
                 self._reading = None
                 return None
             window = ArmingWindow(self._clock())
             self._window = window
-            self._window_trigger = self._window_slot = None
+            self._window_trigger = None
             self._reading = None
         return window
 
@@ -144,7 +143,7 @@ class KeyRouter:
                 taken = True
                 outcome = press.outcome
                 why = "taken, waiting for Reading" if outcome is None else "taken"
-                self._window_trigger, self._window_slot = key, slot
+                self._window_trigger = key
             reading = self._describe_reading()
         self._log(f"trigger key {key.name} Slot {slot}: {why}; latest Reading: {reading}")
         if not taken:
@@ -197,7 +196,7 @@ class KeyRouter:
                 return None
             held = self._window_trigger if window.slot is not None else None
             self._window = None
-            self._window_trigger = self._window_slot = None
+            self._window_trigger = None
             reading = self._describe_reading()
         suffix = ", held Trigger Key handed back" if held is not None else ""
         self._log(f"watch ended: {reason}{suffix}; latest Reading: {reading}")
@@ -208,26 +207,20 @@ class KeyRouter:
             return self._window is window
 
     def finish(self, window: ArmingWindow, outcome: Outcome) -> "Key | None":
-        """Log `outcome`, and end the watch unless it is a beep. Returns the Trigger Key it took."""
+        """Log `outcome`, and end the watch unless it is a beep. Returns the Trigger Key it
+        took. A window that is no longer the current one takes nothing: the Trigger Key
+        now held belongs to the new watch."""
         with self._lock:
-            trigger, slot = self._window_trigger, self._window_slot
+            current = self._window is window
+            trigger = self._window_trigger if current else None
             reading = self._describe_reading()
-            self._window_trigger = self._window_slot = None
-            if outcome.kind != "beep" and self._window is window:
-                self._window = None
-        if outcome.kind == "call":
-            decision = f"Call {outcome.code}"
-        elif outcome.kind == "beep":
-            decision = "beep, Slot cannot be called"
-        elif outcome.kind == "pass":
-            decision = "handed back to the game, no menu seen"
-        elif outcome.kind == "limit":
-            decision = "watch ended, safety limit reached"
-        elif outcome.kind == "focus":
-            decision = "watch ended, game window lost focus"
-        else:
-            decision = "menu closed, watch ended"
-        self._log(f"{'Slot ' + str(slot) + ': ' if slot else ''}{decision}; latest Reading: {reading}")
+            if current:
+                self._window_trigger = None
+                if outcome.ends_watch:
+                    self._window = None
+        slot = self.trigger_keys.get(trigger) if trigger is not None else None
+        prefix = f"Slot {slot}: " if slot else ""
+        self._log(f"{prefix}{outcome.description}; latest Reading: {reading}")
         return trigger
 
     def close_window(self) -> None:

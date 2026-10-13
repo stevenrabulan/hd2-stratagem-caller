@@ -71,8 +71,8 @@ def test_slot_beyond_the_last_beeps():
 
 def test_open_menu_with_nothing_callable_beeps():
     s = Script()
-    assert s.see(ALL_ON_COOLDOWN, 0.3, 0.35) is None
-    assert s.window.press(1, now=0.4) == Press(True, Outcome("beep"))
+    assert s.see(ALL_ON_COOLDOWN, 0.3, 0.35, 0.6, 0.8) is None
+    assert s.window.press(1, now=0.85) == Press(True, Outcome("beep"))
 
 
 def test_beeping_does_not_end_the_watch():
@@ -131,16 +131,28 @@ def test_key_is_handed_back_when_no_menu_ever_appears():
     assert t < 2.5
 
 
+def see_until_decided(s, reading, start, stop=10.0, every=0.05):
+    """Keep showing `reading`; returns (outcome, time it was decided)."""
+    t = start
+    while t < stop:
+        outcome = s.see(reading, t)
+        if outcome is not None:
+            return outcome, t
+        t += every
+    return None, t
+
+
 def test_closed_menu_with_no_key_pending_ends_the_watch():
     s = Script().open_for_a_while()
-    assert s.see(CLOSED, 1.0) is None
-    assert s.see(CLOSED, 1.05) == Outcome("closed")
+    outcome, t = see_until_decided(s, CLOSED, 1.0)
+    assert outcome == Outcome("closed")
+    assert t < 3.0
 
 
 def test_after_the_watch_ends_trigger_keys_are_not_touched():
     s = Script().open_for_a_while()
-    s.see(CLOSED, 1.0, 1.05)
-    assert s.window.press(1, now=1.1) == Press(False, None)
+    outcome, t = see_until_decided(s, CLOSED, 1.0)
+    assert s.window.press(1, now=t + 0.05) == Press(False, None)
 
 
 def test_one_closed_reading_does_not_end_the_watch():
@@ -190,8 +202,7 @@ def test_open_close_open_with_the_call_key_follows_the_screen():
 
 def test_menu_closed_for_a_reason_the_tool_did_not_cause_is_noticed():
     s = Script().open_for_a_while()
-    for t in (5.0, 5.05):
-        outcome = s.see(CLOSED, t)
+    outcome, _ = see_until_decided(s, CLOSED, 5.0)
     assert outcome == Outcome("closed")
 
 
@@ -266,3 +277,138 @@ def test_reading_is_fast_while_a_held_key_waits_for_a_closed_menu_to_open():
     fast = s.window.reading_delay()
     s.window.press(1, now=0.05)
     assert s.window.reading_delay() == fast
+
+
+# --- an open menu hidden for a moment (fire in front of it) ---
+
+
+def test_open_menu_hidden_behind_fire_for_a_moment_is_not_judged_closed():
+    s = Script().open_for_a_while()
+    t = 1.0
+    while t < 1.4:
+        assert s.see(CLOSED, t) is None
+        t += 0.05
+    assert s.see(OPEN, 1.45, 1.5) is None
+    assert s.window.press(1, now=1.55) == Press(True, Outcome("call", "DDUR"))
+
+
+def test_trigger_key_pressed_while_the_menu_is_hidden_is_held_then_called():
+    s = Script().open_for_a_while()
+    s.see(CLOSED, 1.0, 1.05, 1.1)
+    assert s.window.press(2, now=1.12) == Press(True, None)
+    assert s.see(CLOSED, 1.15) is None
+    assert s.see(OPEN, 1.2) is None
+    assert s.see(OPEN, 1.25) == Outcome("call", "DLRDLR")
+
+
+def test_missing_slot_pressed_while_hidden_beeps_only_once_the_menu_is_back():
+    s = Script().open_for_a_while()
+    s.see(CLOSED, 1.0, 1.05, 1.1)
+    assert s.window.press(3, now=1.12) == Press(True, None)
+    s.see(OPEN, 1.2, 1.25)
+    outcome, _ = see_until_decided(s, OPEN, 1.3, stop=3.0)
+    assert outcome == Outcome("beep")
+
+
+def test_menu_hidden_for_good_is_judged_closed_and_the_held_key_is_handed_back():
+    s = Script().open_for_a_while()
+    s.see(CLOSED, 1.0)
+    assert s.window.press(2, now=1.02) == Press(True, None)
+    outcome, t = see_until_decided(s, CLOSED, 1.05)
+    assert outcome == Outcome("pass")
+    assert t > 1.3  # not on the first signs of fire
+    assert t < 3.0
+
+
+def test_reading_is_fast_while_the_menu_is_hidden():
+    s = Script().open_for_a_while()
+    modest = s.window.reading_delay()
+    s.see(CLOSED, 1.0)
+    assert s.window.reading_delay() < modest
+
+
+# --- the Call Key pressed while the menu is open: the player is closing it ---
+
+
+def closing(s, at=2.0):
+    s.window.restart(now=at)
+    return s
+
+
+def test_digit_pressed_while_the_menu_is_closing_is_held_not_called_or_beeped():
+    s = closing(Script().open_for_a_while())
+    assert s.window.press(1, now=2.02) == Press(True, None)
+    assert s.see(OPEN, 2.05, 2.1, 2.15) is None  # the animation still shows the menu
+    s2 = closing(Script().open_for_a_while())
+    assert s2.window.press(3, now=2.02) == Press(True, None)
+    assert s2.see(OPEN, 2.05, 2.1, 2.15) is None
+
+
+def test_held_key_is_handed_back_when_the_menu_is_confirmed_closed():
+    s = closing(Script().open_for_a_while())
+    s.window.press(1, now=2.02)
+    assert s.see(OPEN, 2.05, 2.1) is None
+    assert s.see(CLOSED, 2.15) is None
+    assert s.see(CLOSED, 2.2) == Outcome("pass")
+
+
+def test_menu_still_open_long_after_the_call_key_is_treated_as_open():
+    s = closing(Script().open_for_a_while())
+    s.window.press(1, now=2.02)
+    outcome, t = see_until_decided(s, OPEN, 2.05, stop=4.0)
+    assert outcome == Outcome("call", "DDUR")
+    assert t > 2.3  # not while the close animation could still be showing
+
+
+def test_slot_missing_from_a_menu_still_open_after_the_call_key_beeps_in_the_end():
+    s = closing(Script().open_for_a_while())
+    s.window.press(3, now=2.02)
+    outcome, _ = see_until_decided(s, OPEN, 2.05, stop=4.0)
+    assert outcome == Outcome("beep")
+
+
+# --- a held Trigger Key survives another Call Key press ---
+
+
+def test_held_key_stays_held_when_the_call_key_is_pressed_again_before_the_menu_shows():
+    s = Script()
+    assert s.window.press(2, now=0.05) == Press(True, None)
+    s.window.restart(now=0.1)
+    assert s.see(OPEN, 0.2) is None
+    assert s.see(OPEN, 0.25) == Outcome("call", "DLRDLR")
+
+
+def test_held_key_is_handed_back_when_the_call_key_closes_the_menu():
+    s = Script().open_for_a_while()
+    s.see(unreadable(2), 0.35)
+    assert s.window.press(2, now=0.36) == Press(True, None)
+    s.window.restart(now=1.0)
+    assert s.see(CLOSED, 1.1) is None
+    assert s.see(CLOSED, 1.15) == Outcome("pass")
+
+
+# --- rows that have not slid in yet ---
+
+
+def test_slot_whose_row_has_not_slid_in_yet_is_held_and_called_when_it_arrives():
+    s = Script()
+    s.see(OPEN, 0.25, 0.3)
+    assert s.window.press(3, now=0.31) == Press(True, None)
+    arrived = Reading(codes={**CODES, 3: "UDUD"}, menu_open=True)
+    assert s.see(arrived, 0.36) is None
+    assert s.see(arrived, 0.41) == Outcome("call", "UDUD")
+
+
+def test_slot_that_never_arrives_beeps_after_a_short_settle():
+    s = Script()
+    s.see(OPEN, 0.25, 0.3)
+    assert s.window.press(3, now=0.31) == Press(True, None)
+    outcome, t = see_until_decided(s, OPEN, 0.35, stop=3.0)
+    assert outcome == Outcome("beep")
+    assert t < 1.0
+
+
+def test_confirmed_callable_slot_is_called_at_once_on_a_fresh_menu():
+    s = Script()
+    s.see(OPEN, 0.25, 0.3)
+    assert s.window.press(1, now=0.31) == Press(True, Outcome("call", "DDUR"))

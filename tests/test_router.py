@@ -439,3 +439,48 @@ def test_router_tells_the_worker_how_long_to_wait_between_readings():
     modest = kb.router.reading_delay(window)
     kb.down(CALL, 5.0)  # opening or closing again
     assert kb.router.reading_delay(window) < modest
+
+
+CLOSED = Reading()
+
+
+def test_digit_pressed_while_the_menu_is_closing_is_held_and_handed_back_once_closed():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.now = 0.2
+    kb.router.offer(window, MENU)
+    kb.now = 0.25
+    kb.router.offer(window, MENU)
+    kb.down(CALL, 2.0)  # closing the menu
+    decision = kb.down(ONE, 2.02)
+    assert not decision.let_through and decision.outcome is None
+    for at in (2.05, 2.1):
+        kb.now = at
+        assert kb.router.offer(window, MENU) is None
+    kb.now = 2.15
+    assert kb.router.offer(window, CLOSED) is None
+    kb.now = 2.2
+    outcome = kb.router.offer(window, CLOSED)
+    assert outcome == Outcome("pass")
+    assert kb.router.finish(window, outcome) == ONE
+
+
+def test_held_trigger_key_stays_held_when_the_call_key_is_pressed_again():
+    kb = Keyboard()
+    kb.down(CALL, 0.0)
+    assert not kb.down(ONE, 0.05).let_through
+    kb.down(CALL, 0.3)
+    assert kb.router.end_watch("paused") == ONE
+
+
+def test_a_finished_watch_cannot_wipe_the_held_key_of_a_new_one():
+    kb = Keyboard()
+    old = kb.down(CALL, 0.0).start_watching
+    kb.now = 61.0
+    outcome = kb.router.offer(old, MENU)
+    assert outcome == Outcome("limit")  # the worker has not called finish yet
+    new = kb.down(CALL, 61.1).start_watching
+    assert new is not None and new is not old
+    assert not kb.down(ONE, 61.2).let_through
+    assert kb.router.finish(old, outcome) is None
+    assert kb.router.end_watch("paused") == ONE

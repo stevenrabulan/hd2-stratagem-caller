@@ -17,7 +17,7 @@ Start it before or during a mission, and leave the terminal open:
 .venv\Scripts\python.exe -m stratagem_caller
 ```
 
-- Press the Call Key, then `1`–`9` or `0` while the menu is open. The Call happens about a quarter second after the Call Key, once the menu has finished sliding in.
+- Press the Call Key, then `1`–`9` or `0` while the menu is open. While the menu is already open the Call starts the moment you press the key. If you press it while the menu is still sliding in, the Call starts as soon as that Slot's Code has been read, which is usually within a quarter of a second or so.
 - A low beep means that Slot has no Stratagem you can call right now (cooldown, inbound, or empty).
 - `Ctrl+Alt+P` pauses and resumes. `Ctrl+C` in the terminal quits.
 - Keys, timing and Direct Keys are set in [settings.toml](settings.toml).

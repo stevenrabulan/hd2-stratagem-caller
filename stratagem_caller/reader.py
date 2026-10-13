@@ -110,9 +110,7 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
 
     codes = {}
     icons = {}
-    unreadable: set[int] = set()
-    for slot in rejected:
-        unreadable.add(slot)
+    unreadable = set(rejected)
     for slot, arrows in sorted(found.items()):
         if slot in rejected:
             continue
@@ -139,8 +137,8 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
 def _menu_open(region: np.ndarray, scale: float, codes: dict[int, str]) -> bool:
     """An open menu is a column of Icons in their places. Rows that are still
     sliding in have no Icon in place yet, and a closed menu shows at most a few
-    separate rows, as they come off cooldown. The only open menu that small is a dead player's, which lists Reinforce
-    (Slot 1) alone, with its Code."""
+    separate rows, as they come off cooldown. The only open menu that small is a
+    dead player's, which lists Reinforce (Slot 1) alone, with its Code."""
     run = longest = 0
     for slot in range(1, MAX_SLOTS + 1):
         run = run + 1 if _icon_in_place(region, slot, scale) else 0

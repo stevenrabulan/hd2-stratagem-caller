@@ -15,7 +15,7 @@ import keyboard  # noqa: E402
 import mss  # noqa: E402
 import numpy as np  # noqa: E402
 
-from .arming import ArmingWindow, Outcome  # noqa: E402
+from .arming import ArmingWindow, Kind, Outcome  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
@@ -35,8 +35,11 @@ class App:
         self.call_key = Key.named(settings.call_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
 
-        # Set while the tool is typing, so it doesn't react to its own keys.
+        # Set from the moment a send is decided until it has been typed, so the tool
+        # never reacts to its own keys. Sends may overlap, so they are counted.
         self._sending = threading.Event()
+        self._sends_pending = 0
+        self._count_lock = threading.Lock()
         self._send_lock = threading.Lock()
         self.router = KeyRouter(
             call_key=self.call_key,
@@ -61,12 +64,35 @@ class App:
             ).start()
         if decision.outcome is not None:
             # A Trigger Key decided at once from the Readings already taken.
-            threading.Thread(target=self._act, args=(decision.outcome,), daemon=True).start()
+            self._spawn(self._act, decision.outcome, sends=decision.outcome.sends_keys)
         if decision.direct_code is not None:
-            threading.Thread(
-                target=self._direct_call, args=(decision.direct_code,), daemon=True
-            ).start()
+            self._spawn(self._direct_call, decision.direct_code, sends=True)
         return decision.let_through
+
+    def _spawn(self, target: Callable, *args, sends: bool) -> None:
+        """Run `target` on its own thread. A send is marked as begun here, in the caller's
+        thread, so no key of its own can arrive before the tool knows it is typing."""
+        if sends:
+            self._begin_send()
+        threading.Thread(target=self._run, args=(target, args, sends), daemon=True).start()
+
+    def _run(self, target: Callable, args: tuple, sends: bool) -> None:
+        try:
+            target(*args)
+        finally:
+            if sends:
+                self._end_send()
+
+    def _begin_send(self) -> None:
+        with self._count_lock:
+            self._sends_pending += 1
+            self._sending.set()
+
+    def _end_send(self) -> None:
+        with self._count_lock:
+            self._sends_pending -= 1
+            if self._sends_pending == 0:
+                self._sending.clear()
 
     # --- worker threads ---
 
@@ -85,12 +111,19 @@ class App:
                     reading = read_menu(region, monitor["height"])
                     outcome = self.router.offer(window, reading)
                     if outcome is not None:
-                        trigger = self.router.finish(window, outcome)
-                        if outcome.kind == "beep":
-                            threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
-                        else:
-                            self._act(outcome, trigger)
-                            return
+                        if outcome.sends_keys:
+                            self._begin_send()  # before the watch ends and keys are free again
+                        try:
+                            trigger = self.router.finish(window, outcome)
+                            if not outcome.ends_watch:
+                                # A beep: keep reading while it sounds.
+                                threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
+                            else:
+                                self._act(outcome, trigger)
+                                return
+                        finally:
+                            if outcome.sends_keys:
+                                self._end_send()
                     time.sleep(self.router.reading_delay(window))
         finally:
             # An error must not leave a watch with no worker (the next Call Key press would
@@ -98,43 +131,36 @@ class App:
             self.router.end_watch("reading stopped", only=window)
 
     def _act(self, outcome: Outcome, trigger: Key | None = None) -> None:
-        if outcome.kind == "call":
-            self._type(outcome.code)
-        elif outcome.kind == "beep":
+        """Carry out what a Trigger Key came to. Once paused nothing is typed or tapped
+        (a beep is only a sound). A key held when focus was lost, or a closed menu,
+        needs nothing."""
+        if outcome.kind is Kind.BEEP:
             winsound.Beep(330, 150)
-        elif outcome.kind in ("pass", "limit") and trigger is not None:
+        elif self.router.paused:
+            return
+        elif outcome.kind is Kind.CALL:
+            self._type(outcome.code)
+        elif outcome.hands_back and trigger is not None:
             self._hand_back(trigger)
-        # "closed" and "focus" need nothing: a key held when focus was lost is not
-        # sent to whatever window has focus now.
 
     def _hand_back(self, trigger: Key) -> None:
         with self._send_lock:
-            self._sending.set()
-            try:
-                self._tap(trigger)
-            finally:
-                self._sending.clear()
+            self._tap(trigger)
 
     def _direct_call(self, code: str) -> None:
         with self._send_lock:
-            self._sending.set()
-            try:
-                self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
-                self._tap_code(code)
-            finally:
-                self._sending.clear()
+            self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
+            self._tap_code(code)
         self.router.close_window()
 
     def _type(self, code: str) -> None:
         with self._send_lock:
-            self._sending.set()
-            try:
-                self._tap_code(code)
-            finally:
-                self._sending.clear()
+            self._tap_code(code, until_paused=True)
 
-    def _tap_code(self, code: str) -> None:
+    def _tap_code(self, code: str, until_paused: bool = False) -> None:
         for direction in code:
+            if until_paused and self.router.paused:
+                return
             self._tap(self.direction_keys[direction])
 
     def _tap(self, key: Key, gap: tuple[int, int] | None = None) -> None:
@@ -151,7 +177,7 @@ class App:
         # A Trigger Key still held is given back to the game.
         held = self.router.end_watch("paused") if self.router.paused else None
         if held is not None:
-            threading.Thread(target=self._hand_back, args=(held,), daemon=True).start()
+            self._spawn(self._hand_back, held, sends=True)
         winsound.Beep(440 if self.router.paused else 880, 120)
         print("paused" if self.router.paused else "resumed")
 
