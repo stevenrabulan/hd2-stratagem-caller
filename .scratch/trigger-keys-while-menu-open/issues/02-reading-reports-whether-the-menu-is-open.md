@@ -8,7 +8,7 @@ A fixture for an open menu with nothing callable has to be found in the raw capt
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Every existing fixture of an open, settled menu reports open
 - [ ] An open menu with nothing callable reports open, with no Codes
@@ -40,3 +40,5 @@ A fixture for an open menu with nothing callable has to be found in the raw capt
 Not checked frame by frame: the 100 ms and 250 ms frames with no Codes (only the 100 ms frames that were reported open).
 
 All 108 tests pass, including every existing reader test.
+
+**Resolved 2026-10-13.** Merged into `trigger-keys-while-menu-open` as 337c29e. Code review fixes that touch this ticket are in d003bd4; see "Code review fixes" in the spec. Not yet confirmed in-game.

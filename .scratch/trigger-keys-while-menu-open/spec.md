@@ -1,6 +1,6 @@
 # Trigger Keys work for as long as the Stratagem Menu is open
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Problem Statement
 
@@ -127,3 +127,10 @@ Findings from review of the integration branch, with what was done. Numbers are 
 - **F. `router.finish` wiping a new watch's held key.** `finish` now clears and returns the held Trigger Key only if the window it was given is still the current one. The tool is marked as sending from the moment a send is decided, in the thread that decided it, with a count so overlapping sends do not clear it early.
 - **G. README.** The Call is now described as immediate when the menu is open, and as soon as the Slot's Code is read when the menu is still sliding in.
 - **Tidy-ups.** `set(rejected)` in the reader and the wrapped docstring. Outcome kinds are one `Kind` enum in `arming.py` (still accepts the strings), with the log wording and the "ends the watch" / "hands the key back" / "sends keys" facts on `Outcome`, so neither the router nor the app repeats the cascade. The router keeps only the held Trigger Key, and the Slot is the window's. `handle` and the repeat log share `_trigger_for`. The log text for a hand back now reads "handed back to the game, menu not open".
+
+**Implemented 2026-10-13** on branch `trigger-keys-while-menu-open` (tip of the code review merge: d003bd4). All five tickets are resolved; 161 automated tests pass. Status is `ready-for-human` because the keyboard hook, screen capture and key sending are only confirmed by playing: run one copy of the tool, no capture script, and read `logs/stratagem_caller.log` after any miss.
+
+Left open by the code review, on purpose:
+- A digit pressed while a Code is part-way typed by hand earns a beep (user story 21). Fixing it means the screen reader recognising entered arrows.
+- "Watch" and "unreadable" are used in code and logs but are not in the glossary.
+- The screen reader still reports an open menu behind a large fire as closed; the decision logic now waits about 0.6 s before believing it.

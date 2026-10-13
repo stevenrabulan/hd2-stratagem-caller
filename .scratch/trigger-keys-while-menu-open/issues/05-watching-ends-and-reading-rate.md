@@ -6,7 +6,7 @@ Where the rule can be expressed without keyboard, screen capture or clock (when 
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Pausing ends the watch; a Trigger Key pressed afterwards is not touched
 - [ ] A Trigger Key being held when the watch ends is not lost silently: it is handed back to the game
@@ -25,3 +25,5 @@ Where the rule can be expressed without keyboard, screen capture or clock (when 
 - Pause ends the watch (log: "watch ended: paused") and hands a held Trigger Key back to the game. Focus loss ends the watch from the worker's next Reading (<= 0.2 s) and does not tap a held key, since it would go to another window; the log says why.
 - If reading throws an error, the worker ends the watch so the next Call Key press starts a fresh worker.
 - The watch-ends logic and rates are scripted tests (`test_arming.py`, `test_router.py`). `app.py` (worker loop, pause hand back) is checked by reading and by import only.
+
+**Resolved 2026-10-13.** Merged into `trigger-keys-while-menu-open` as 7e9bbe3. Code review fixes that touch this ticket are in d003bd4; see "Code review fixes" in the spec. Not yet confirmed in-game.

@@ -6,7 +6,7 @@ Existing callers of the reader keep working: they may ignore the unreadable stat
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] The glow-behind-last-arrow fixture yields no Code for Resupply's Slot, and reports that Slot as unreadable
 - [ ] The fixture of the same menu a quarter second later yields Resupply's full Code
@@ -14,3 +14,7 @@ Existing callers of the reader keep working: they may ignore the unreadable stat
 - [ ] A Slot showing a status in place of arrows (cooldown, inbound) is not reported as unreadable
 - [ ] Every existing reader test still passes
 - [ ] Tests are fixture image in, Reading out; none depend on thresholds or pixel positions
+
+## Comments
+
+**Resolved 2026-10-13.** Merged into `trigger-keys-while-menu-open` as 71d2b12. Code review fixes that touch this ticket are in d003bd4; see "Code review fixes" in the spec. Not yet confirmed in-game.

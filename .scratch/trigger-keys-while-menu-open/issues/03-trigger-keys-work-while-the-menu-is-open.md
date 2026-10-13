@@ -8,7 +8,7 @@ The Arming Window no longer takes a length. Stop using the length setting here; 
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Slot confirmed callable when the Trigger Key is pressed: the Call starts at once, with no wait for another Reading
 - [ ] A Trigger Key works many seconds after the Call Key, as long as the menu is still open
@@ -38,3 +38,5 @@ The Arming Window no longer takes a length. Stop using the length setting here; 
 - Beyond-the-last-Slot and not-callable are the same to the logic (menu confirmed open, Slot in neither `codes` nor `unreadable` in two Readings): beep at once.
 - Reading rate is a fixed 0.05 s sleep between Readings; the settings key `arming_window_ms` is still loaded but unused (ticket 04). No safety limit or focus-loss end yet (ticket 05); pause still drops the window.
 - Not covered by tests: `app.py` (worker/hook wiring), checked by reading only.
+
+**Resolved 2026-10-13.** Merged into `trigger-keys-while-menu-open` as fa45a72. Code review fixes that touch this ticket are in d003bd4; see "Code review fixes" in the spec. Not yet confirmed in-game.

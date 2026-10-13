@@ -4,10 +4,14 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] The shipped settings file loads and has no Arming Window length setting
 - [ ] The loaded settings have no Arming Window length
 - [ ] A settings file that still carries the old setting loads without error
 - [ ] The glossary definition of Arming Window and of Trigger Key match the new behaviour
 - [ ] The README says nothing about a one-second limit
+
+## Comments
+
+**Resolved 2026-10-13.** Merged into `trigger-keys-while-menu-open` as 64a8cf1. Code review fixes that touch this ticket are in d003bd4; see "Code review fixes" in the spec. Not yet confirmed in-game.
