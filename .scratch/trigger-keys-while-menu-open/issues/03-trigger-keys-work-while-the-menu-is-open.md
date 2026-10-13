@@ -26,3 +26,15 @@ The Arming Window no longer takes a length. Stop using the length setting here; 
 - [ ] Direct Keys behave exactly as before
 - [ ] The Trigger Key and Call log lines still explain each decision
 - [ ] Decision-logic tests are scripted events in, one decision out; none depend on internal thresholds or timer names
+
+## Comments
+
+**Judgement calls (implementer).**
+
+- Opening grace is 0.75 s after a Call Key press (captures show readable by 500 ms). When the menu was already confirmed open, a second Call Key press is taken to be closing it and the grace is only 0.05 s, so a digit pressed right after closing the menu is handed back after about 0.15 s, not about 0.85 s. Weak spot: a digit pressed during the closing animation can still be called off a Reading that has not yet noticed the close.
+- Unreadable limit is 0.75 s, counted from the later of the key press and the menu being confirmed open. Closed needs two consecutive not-open Readings, both taken after the grace.
+- A Trigger Key pressed while another is held replaces it (the first, already swallowed, is dropped). A held key is also dropped if the Call Key is pressed again.
+- After a Call or a hand back the watch ends (the window is dropped), so "stop acting until the next Call Key" is "no window". A beep keeps the window. A second Call Key press while watching restarts the same window (forgets earlier Readings, new grace) and does not start another worker thread.
+- Beyond-the-last-Slot and not-callable are the same to the logic (menu confirmed open, Slot in neither `codes` nor `unreadable` in two Readings): beep at once.
+- Reading rate is a fixed 0.05 s sleep between Readings; the settings key `arming_window_ms` is still loaded but unused (ticket 04). No safety limit or focus-loss end yet (ticket 05); pause still drops the window.
+- Not covered by tests: `app.py` (worker/hook wiring), checked by reading only.

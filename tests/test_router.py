@@ -1,6 +1,7 @@
 import pytest
 
 from stratagem_caller.arming import Outcome
+from stratagem_caller.reader import Reading
 from stratagem_caller.router import REPEAT_GAP, KeyEvent, KeyRouter
 from stratagem_caller.winkeys import Key
 
@@ -14,7 +15,7 @@ ONE = Key("1", 2, False)
 TWO = Key("2", 3, False)
 REINFORCE = Key("page down", 81, True)
 TITLE = "HELLDIVERS 2"
-MENU = {1: "DDUR", 2: "DLRDLR"}
+MENU = Reading(codes={1: "DDUR", 2: "DLRDLR"}, menu_open=True)
 
 HELD_KEYS = {
     "w": [W],
@@ -41,7 +42,6 @@ class Keyboard:
             direct_keys={REINFORCE: "DDDUUR"},
             trigger_keys={ONE: 1, TWO: 2},
             window_title=TITLE,
-            arming_length=1.0,
             clock=lambda: self.now,
             foreground_title=lambda: self.focused,
             is_sending=lambda: self.sending,
@@ -210,10 +210,68 @@ def test_trigger_key_is_an_ordinary_key_outside_the_arming_window():
     assert not kb.window_taken()
 
 
-def test_trigger_key_after_the_arming_window_is_handed_back():
+def test_trigger_key_long_after_the_call_key_is_still_taken_while_the_menu_is_open():
     kb = Keyboard()
-    kb.down(CALL, 0.0)
-    assert kb.down(ONE, 1.0).let_through
+    window = kb.down(CALL, 0.0).start_watching
+    kb.router.offer(window, MENU)
+    kb.now = 0.1
+    kb.router.offer(window, MENU)
+    kb.now = 12.0
+    decision = kb.down(ONE, 12.0)
+    assert not decision.let_through
+    assert decision.outcome == Outcome("call", "DDUR")
+    assert "Call DDUR" in kb.lines[-1]
+
+
+def test_trigger_key_is_an_ordinary_key_again_after_a_call():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.router.offer(window, MENU)
+    kb.now = 0.1
+    kb.router.offer(window, MENU)
+    kb.down(ONE, 0.2)
+    kb.up(ONE, 0.25)
+    assert kb.down(TWO, 0.5).let_through
+
+
+def test_beep_swallows_the_key_and_the_watch_goes_on():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.router.offer(window, MENU)
+    kb.now = 0.1
+    kb.router.offer(window, MENU)
+    three = Key("3", 4, False)
+    kb.router.trigger_keys[three] = 3
+    decision = kb.down(three, 0.5)
+    assert not decision.let_through and decision.outcome == Outcome("beep")
+    kb.up(three, 0.55)
+    assert kb.router.is_current(window)
+    assert kb.down(ONE, 0.8).outcome == Outcome("call", "DDUR")
+
+
+def test_second_call_key_press_keeps_watching_instead_of_starting_again():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.up(CALL, 0.05)
+    assert kb.down(CALL, 3.0).start_watching is None
+    assert kb.router.is_current(window)
+
+
+def test_call_key_after_the_watch_ended_starts_a_new_one():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.router.offer(window, Reading(menu_open=True))
+    kb.down(ONE, 0.2)
+    kb.router.finish(window, Outcome("call", "DDUR"))
+    assert kb.down(CALL, 4.0).start_watching is not None
+
+
+def test_held_trigger_key_is_returned_when_the_watch_hands_it_back():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.down(TWO, 0.1)
+    assert kb.router.finish(window, Outcome("pass")) == TWO
+    assert not kb.router.is_current(window)
 
 
 def test_keys_are_ignored_in_other_windows():
@@ -277,6 +335,7 @@ def test_log_records_the_call_and_the_reading_it_was_made_from():
     window = kb.down(CALL, 0.0).start_watching
     kb.down(TWO, 0.1)
     assert "waiting for Reading" in kb.lines[-1] and "none yet" in kb.lines[-1]
+    kb.now = 0.2
     assert kb.router.offer(window, MENU) is None
     kb.now = 0.3
     outcome = kb.router.offer(window, MENU)
@@ -297,6 +356,7 @@ def test_log_records_a_beep_and_a_hand_back():
     kb.down(TWO, 5.1)
     kb.router.finish(window, Outcome("beep"))
     assert "beep" in kb.lines[-1]
+    assert kb.router.is_current(window)
 
 
 def test_log_records_a_direct_key_call():

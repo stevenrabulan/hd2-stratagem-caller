@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .arming import ArmingWindow, Outcome
+from .reader import Reading
 
 if TYPE_CHECKING:
     from .winkeys import Key
@@ -31,6 +32,8 @@ class Decision:
     start_watching: ArmingWindow | None = None
     # Set when a Direct Key was pressed: the Code to Call.
     direct_code: str | None = None
+    # Set when a Trigger Key was decided at once: the Call or beep to make now.
+    outcome: Outcome | None = None
 
 
 class KeyRouter:
@@ -41,7 +44,6 @@ class KeyRouter:
         direct_keys: "dict[Key, str]",
         trigger_keys: "dict[Key, int]",
         window_title: str,
-        arming_length: float,
         clock: Callable[[], float],
         foreground_title: Callable[[], str],
         is_sending: Callable[[], bool],
@@ -51,7 +53,6 @@ class KeyRouter:
         self.direct_keys = direct_keys
         self.trigger_keys = trigger_keys
         self.window_title = window_title
-        self.arming_length = arming_length
         self.paused = False
         self._clock = clock
         self._foreground_title = foreground_title
@@ -60,8 +61,9 @@ class KeyRouter:
 
         self._lock = threading.Lock()
         self._window: ArmingWindow | None = None
-        self._window_trigger: "Key | None" = None
-        self._reading: dict[int, str] | None = None
+        self._window_trigger: "Key | None" = None  # the Trigger Key it took, and its Slot
+        self._window_slot: int | None = None
+        self._reading: Reading | None = None
         self._held: dict[Ident, float] = {}  # key -> time of its latest key-down
         self._swallowed: set[Ident] = set()
 
@@ -116,34 +118,41 @@ class KeyRouter:
 
     def _on_call_key(self) -> ArmingWindow | None:
         with self._lock:
-            if self._window is not None:
-                # The Call Key toggles: a second press closes the menu.
-                self._window = None
+            if self._window is not None and not self._window.done:
+                # Already watching: the Call Key opens or closes the menu, and what is
+                # on screen decides which. The worker thread carries on.
+                self._window.restart(self._clock())
+                self._window_trigger = self._window_slot = None
+                self._reading = None
                 return None
-            window = ArmingWindow(self._clock(), self.arming_length)
+            window = ArmingWindow(self._clock())
             self._window = window
-            self._window_trigger = None
+            self._window_trigger = self._window_slot = None
             self._reading = None
         return window
 
     def _on_trigger_key(self, ident: Ident, key: "Key", slot: int) -> Decision:
+        outcome = None
         with self._lock:
-            if self._window is None:
-                taken = False
-                why = "not in the Arming Window"
+            window = self._window
+            press = window.press(slot, self._clock()) if window is not None else None
+            if press is None:
+                taken, why = False, "not in the Arming Window"
+            elif not press.taken:
+                taken, why = False, "not taken, the Arming Window has made its Call"
             else:
-                taken = self._window.press(slot, self._clock())
-                why = "taken, waiting for Reading"
-                if not taken:
-                    why = "not taken, Arming Window past its end or a Slot already chosen"
-            if taken:
-                self._window_trigger = key
+                taken = True
+                outcome = press.outcome
+                why = "taken, waiting for Reading" if outcome is None else "taken"
+                self._window_trigger, self._window_slot = key, slot
             reading = self._describe_reading()
         self._log(f"trigger key {key.name} Slot {slot}: {why}; latest Reading: {reading}")
-        if taken:
-            self._swallowed.add(ident)
-            return Decision(False)
-        return Decision(True)
+        if not taken:
+            return Decision(True)
+        self._swallowed.add(ident)
+        if outcome is not None:
+            self.finish(window, outcome)
+        return Decision(False, outcome=outcome)
 
     def _log_trigger(self, slot: int, decision: str) -> None:
         with self._lock:
@@ -151,33 +160,37 @@ class KeyRouter:
         self._log(f"trigger key Slot {slot}: {decision}; latest Reading: {reading}")
 
     def _describe_reading(self) -> str:
-        if self._reading is None:
+        reading = self._reading
+        if reading is None:
             return "none yet"
-        if not self._reading:
-            return "no menu"
-        return "Slots " + ",".join(str(slot) for slot in sorted(self._reading))
+        if not reading.menu_open:
+            return "menu not open"
+        text = "menu open, Slots " + (",".join(str(n) for n in sorted(reading.codes)) or "none")
+        if reading.unreadable:
+            text += "; unreadable " + ",".join(str(n) for n in sorted(reading.unreadable))
+        return text
 
-    # --- the worker threads' view of the Arming Window ---
+    # --- the worker thread's view of the Arming Window ---
 
-    def offer(self, window: ArmingWindow, codes: dict[int, str]) -> Outcome | None:
+    def offer(self, window: ArmingWindow, reading: Reading) -> Outcome | None:
         """Feed a Reading to `window`. None while undecided, or if `window` was replaced."""
         with self._lock:
             if self._window is not window:
                 return None
-            self._reading = codes
-            return window.offer(codes, self._clock())
+            self._reading = reading
+            return window.offer(reading, self._clock())
 
     def is_current(self, window: ArmingWindow) -> bool:
         with self._lock:
             return self._window is window
 
     def finish(self, window: ArmingWindow, outcome: Outcome) -> "Key | None":
-        """Close `window` and log its Outcome. Returns the Trigger Key it took, if any."""
+        """Log `outcome`, and end the watch unless it is a beep. Returns the Trigger Key it took."""
         with self._lock:
-            trigger = self._window_trigger
-            slot = window.slot
+            trigger, slot = self._window_trigger, self._window_slot
             reading = self._describe_reading()
-            if self._window is window:
+            self._window_trigger = self._window_slot = None
+            if outcome.kind != "beep" and self._window is window:
                 self._window = None
         if outcome.kind == "call":
             decision = f"Call {outcome.code}"
@@ -186,8 +199,8 @@ class KeyRouter:
         elif outcome.kind == "pass":
             decision = "handed back to the game, no menu seen"
         else:
-            return trigger
-        self._log(f"Slot {slot}: {decision}; latest Reading: {reading}")
+            decision = "menu closed, watch ended"
+        self._log(f"{'Slot ' + str(slot) + ': ' if slot else ''}{decision}; latest Reading: {reading}")
         return trigger
 
     def close_window(self) -> None:
