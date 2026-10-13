@@ -18,13 +18,22 @@ CLOSING_GRACE = 0.05
 # A Slot that stays unreadable this long after the menu opened (or the key was
 # pressed, whichever is later) earns a beep.
 UNREADABLE_LIMIT = 0.75
+# A watch that has run this long since the last Call Key press is given up, so a
+# misdetected menu cannot keep the tool reading the screen for a whole session.
+SAFETY_LIMIT = 60.0
+# Seconds between Readings. Fast while the menu is opening or a Trigger Key is
+# waiting to be resolved; modest once the menu is confirmed and nothing waits.
+FAST_READING_INTERVAL = 0.05
+MODEST_READING_INTERVAL = 0.2
 
 
 @dataclass(frozen=True)
 class Outcome:
     # "call": enter `code`. "beep": the Slot can't be called, the watch goes on.
     # "pass": no menu appeared, hand the held Trigger Key back to the game; the
-    # watch is over. "closed": the menu closed, the watch is over.
+    # watch is over. "closed": the menu closed, the watch is over. "limit": the
+    # safety limit ended the watch (a held Trigger Key is handed back). "focus":
+    # the game lost focus, the watch is over (the router decides this, not the window).
     kind: str
     code: str | None = None
 
@@ -48,6 +57,7 @@ class ArmingWindow:
         nothing seen so far is trusted and any held Trigger Key is dropped."""
         if menu_was_open is None:
             menu_was_open = self._confirmed_open()
+        self._started = now
         self._grace_end = now + (CLOSING_GRACE if menu_was_open else OPENING_GRACE)
         self._previous: Reading | None = None
         self._latest: Reading | None = None
@@ -73,6 +83,10 @@ class ArmingWindow:
         """Feed a new Reading. Returns an Outcome once something is decided."""
         if self.done:
             return None
+        if now - self._started >= SAFETY_LIMIT:
+            self.done = True
+            self.slot = None
+            return Outcome("limit")
         self._previous, self._latest = self._latest, reading
         if reading.menu_open:
             self._not_open_readings = 0
@@ -99,6 +113,12 @@ class ArmingWindow:
             if outcome.kind == "call":
                 self.done = True
         return outcome
+
+    def reading_delay(self) -> float:
+        """Seconds to wait before the next Reading."""
+        if self.slot is not None or not self._confirmed_open():
+            return FAST_READING_INTERVAL
+        return MODEST_READING_INTERVAL
 
     def _confirmed_open(self) -> bool:
         # One Reading can catch the menu mid-animation; two in a row can't.

@@ -208,3 +208,61 @@ def test_second_trigger_key_while_one_is_held_replaces_it():
     assert s.window.press(2, now=0.15).taken
     s.see(OPEN, 0.2)
     assert s.see(OPEN, 0.25) == Outcome("call", "DLRDLR")
+
+
+def keep_seeing_open(s, start, stop, every=0.25):
+    t, outcome = start, None
+    while t < stop and outcome is None:
+        outcome = s.see(OPEN, t)
+        t += every
+    return outcome
+
+
+def test_watch_that_runs_far_too_long_ends():
+    s = Script().open_for_a_while()
+    assert keep_seeing_open(s, 0.5, 600) == Outcome("limit")
+    assert s.window.press(1, now=601) == Press(False, None)
+
+
+def test_watch_still_works_after_half_a_minute():
+    s = Script().open_for_a_while()
+    assert keep_seeing_open(s, 0.5, 30) is None
+    assert s.window.press(1, now=30.1).outcome == Outcome("call", "DDUR")
+
+
+def test_call_key_press_starts_the_safety_limit_afresh():
+    s = Script().open_for_a_while()
+    keep_seeing_open(s, 0.5, 50)
+    s.window.restart(now=50.0)
+    s.see(OPEN, 50.3, 50.35)
+    assert keep_seeing_open(s, 50.4, 100) is None
+
+
+def test_reading_is_modest_while_the_menu_is_confirmed_open_and_no_key_waits():
+    s = Script().open_for_a_while()
+    modest = s.window.reading_delay()
+    s2 = Script()
+    s2.see(OPEN, 0.25)  # one Reading is not a confirmation
+    opening = s2.window.reading_delay()
+    s3 = Script().open_for_a_while()
+    s3.window.press(2, now=0.4)  # called at once: nothing waiting, watch over
+    s4 = Script()
+    s4.see(unreadable(2), 0.25, 0.3)
+    s4.window.press(2, now=0.31)
+    waiting = s4.window.reading_delay()
+    assert opening < modest
+    assert waiting < modest
+
+
+def test_reading_is_fast_right_after_the_call_key_is_pressed_again():
+    s = Script().open_for_a_while()
+    modest = s.window.reading_delay()
+    s.window.restart(now=3.0)
+    assert s.window.reading_delay() < modest
+
+
+def test_reading_is_fast_while_a_held_key_waits_for_a_closed_menu_to_open():
+    s = Script()
+    fast = s.window.reading_delay()
+    s.window.press(1, now=0.05)
+    assert s.window.reading_delay() == fast

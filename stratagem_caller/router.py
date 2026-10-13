@@ -177,8 +177,31 @@ class KeyRouter:
         with self._lock:
             if self._window is not window:
                 return None
+            if self._foreground_title() != self.window_title:
+                return Outcome("focus")
             self._reading = reading
             return window.offer(reading, self._clock())
+
+    def reading_delay(self, window: ArmingWindow) -> float:
+        """Seconds the worker should wait before its next Reading."""
+        with self._lock:
+            return window.reading_delay()
+
+    def end_watch(self, reason: str, only: ArmingWindow | None = None) -> "Key | None":
+        """End the watch from outside its normal course (pause, a failed Reading). With `only`,
+        end it just if that is still the current one. Returns the Trigger Key that was held,
+        if any, for the caller to hand back to the game."""
+        with self._lock:
+            window = self._window
+            if window is None or (only is not None and window is not only):
+                return None
+            held = self._window_trigger if window.slot is not None else None
+            self._window = None
+            self._window_trigger = self._window_slot = None
+            reading = self._describe_reading()
+        suffix = ", held Trigger Key handed back" if held is not None else ""
+        self._log(f"watch ended: {reason}{suffix}; latest Reading: {reading}")
+        return held
 
     def is_current(self, window: ArmingWindow) -> bool:
         with self._lock:
@@ -198,6 +221,10 @@ class KeyRouter:
             decision = "beep, Slot cannot be called"
         elif outcome.kind == "pass":
             decision = "handed back to the game, no menu seen"
+        elif outcome.kind == "limit":
+            decision = "watch ended, safety limit reached"
+        elif outcome.kind == "focus":
+            decision = "watch ended, game window lost focus"
         else:
             decision = "menu closed, watch ended"
         self._log(f"{'Slot ' + str(slot) + ': ' if slot else ''}{decision}; latest Reading: {reading}")

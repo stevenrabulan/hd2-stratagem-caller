@@ -15,3 +15,13 @@ Where the rule can be expressed without keyboard, screen capture or clock (when 
 - [ ] With the menu confirmed open and no Trigger Key waiting, Readings are taken at the modest rate
 - [ ] While the menu is opening, or a Trigger Key is waiting, Readings are taken at the fast rate
 - [ ] The log records why a watch ended
+
+## Comments
+
+**Judgement calls (implementer).**
+
+- Safety limit is 60 s from the latest Call Key press (a second press restarts the count). The menu is rarely left open that long; the limit only has to bound a misdetection. A held Trigger Key is handed back when it fires; the log says "safety limit reached".
+- Reading rates: 0.05 s while the menu is not yet confirmed open or a Trigger Key is waiting; 0.2 s once confirmed with nothing waiting. Cost: a menu closed by the game is noticed after about two modest Readings (~0.4 s), so a digit pressed in that gap is swallowed and beeps.
+- Pause ends the watch (log: "watch ended: paused") and hands a held Trigger Key back to the game. Focus loss ends the watch from the worker's next Reading (<= 0.2 s) and does not tap a held key, since it would go to another window; the log says why.
+- If reading throws an error, the worker ends the watch so the next Call Key press starts a fresh worker.
+- The watch-ends logic and rates are scripted tests (`test_arming.py`, `test_router.py`). `app.py` (worker loop, pause hand back) is checked by reading and by import only.

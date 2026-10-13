@@ -363,3 +363,79 @@ def test_log_records_a_direct_key_call():
     kb = Keyboard()
     kb.down(REINFORCE, 0.0)
     assert "DDDUUR" in kb.lines[-1]
+
+
+def watching(kb):
+    kb.down(CALL, 0.0)
+    window = kb.router._window
+    kb.router.offer(window, MENU)
+    kb.router.offer(window, MENU)
+    return window
+
+
+def test_pausing_ends_the_watch_and_a_later_trigger_key_is_not_touched():
+    kb = Keyboard()
+    watching(kb)
+    assert kb.router.end_watch("paused") is None
+    kb.router.paused = True
+    assert kb.down(ONE, 1.0).let_through
+    kb.router.paused = False
+    assert kb.down(ONE, 3.0).let_through
+
+
+def test_pausing_hands_back_a_trigger_key_that_was_held():
+    kb = Keyboard()
+    kb.down(CALL, 0.0)
+    assert not kb.down(ONE, 0.05).let_through  # held: no Reading yet
+    assert kb.router.end_watch("paused") == ONE
+    assert kb.router.end_watch("paused") is None  # only once
+
+
+def test_pausing_logs_why_the_watch_ended():
+    kb = Keyboard()
+    watching(kb)
+    kb.router.end_watch("paused")
+    assert any("paused" in line for line in kb.lines)
+
+
+def test_focus_loss_ends_the_watch_and_no_further_readings_are_taken():
+    kb = Keyboard()
+    window = watching(kb)
+    kb.focused = "Notepad"
+    now_outcome = kb.router.offer(window, MENU)
+    assert now_outcome == Outcome("focus")
+    kb.router.finish(window, now_outcome)
+    assert not kb.router.is_current(window)
+    assert any("focus" in line for line in kb.lines)
+
+
+def test_after_focus_loss_the_next_call_key_press_starts_a_new_watch():
+    kb = Keyboard()
+    window = watching(kb)
+    kb.focused = "Notepad"
+    kb.router.finish(window, kb.router.offer(window, MENU))
+    kb.focused = TITLE
+    assert kb.down(CALL, 5.0).start_watching is not None
+
+
+def test_safety_limit_is_logged_and_hands_back_a_held_key():
+    kb = Keyboard()
+    window = watching(kb)
+    t = 0.0
+    outcome = None
+    while outcome is None and t < 600:
+        t += 0.25
+        kb.now = t
+        outcome = kb.router.offer(window, MENU)
+    assert outcome == Outcome("limit")
+    assert kb.router.finish(window, outcome) is None
+    assert any("limit" in line for line in kb.lines)
+    assert kb.down(ONE, t + 1).let_through
+
+
+def test_router_tells_the_worker_how_long_to_wait_between_readings():
+    kb = Keyboard()
+    window = watching(kb)
+    modest = kb.router.reading_delay(window)
+    kb.down(CALL, 5.0)  # opening or closing again
+    assert kb.router.reading_delay(window) < modest
