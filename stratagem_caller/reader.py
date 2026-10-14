@@ -24,7 +24,9 @@ ICON_LEFT = 105.0
 ICON_TOP = 162.0
 ICON_SIZE = 86.0
 MAX_SLOTS = 10
-MAX_ARROWS = 8
+# Bright clutter needs this many pixels on an arrow line to make the Slot
+# unreadable; an arrow is about 450. Fewer is a blob grazing the line's edge.
+CLUTTER_PIXELS = 10
 
 # An Icon is a square whose four edges are sharp against the menu behind it.
 # Each edge counts when most of its length differs this much (summed over the
@@ -78,35 +80,32 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
     # slot -> {arrow position in the Code: direction}
     found: dict[int, dict[int, str]] = {}
     rejected: set[int] = set()
-    other_bright: set[int] = set()
+    is_arrow = np.zeros(len(stats), dtype=bool)
     for label in range(1, len(stats)):
         x, y, w, h, _area = (int(v) for v in stats[label])
         slot_pos = (y / scale - FIRST_ARROW_TOP) / SLOT_PITCH
         slot = round(slot_pos) + 1
-        overlapped = _slots_overlapped(x, y, w, h, _area, scale)
         if not 1 <= slot <= MAX_SLOTS or abs(slot_pos - round(slot_pos)) > 0.08:
-            # Not an arrow-shaped thing on a slot line, but if it still covers
-            # part of a line (a glow merged with an arrow) that line is clutter.
-            other_bright.update(overlapped)
-            continue
+            continue  # not on a slot line; clutter wherever it crosses one
+        direction = _direction(labels[y : y + h, x : x + w] == label, scale)
+        if direction is None:
+            continue  # clutter: a glow, a status text, bright scenery
+        is_arrow[label] = True
         arrow_pos = (x / scale - FIRST_ARROW_LEFT) / ARROW_PITCH
         index = round(arrow_pos)
-        direction = _direction(labels[y : y + h, x : x + w] == label, scale)
-        if index < -1:
-            if direction is not None:
-                rejected.add(slot)  # an arrow far left of the line: still sliding in
-            continue
-        on_grid = abs(arrow_pos - index) <= 0.15
-        if direction is None or not on_grid or index < 0:
-            # Something white where an arrow line should be clean: a menu still
-            # sliding in, or a status text. An arrow left of the first position
-            # means the whole line is shifted, so the Slot can't be trusted.
-            if direction is not None:
-                rejected.add(slot)
-            else:
-                other_bright.update(overlapped)
+        if index < 0 or abs(arrow_pos - index) > 0.15:
+            # An arrow left of the first position or off the grid means the
+            # whole line is shifted (still sliding in), so the Slot can't be trusted.
+            rejected.add(slot)
             continue
         found.setdefault(slot, {})[index] = direction
+
+    # Bright pixels that are not arrows, ignoring specks. Judged pixel by pixel:
+    # one blob of bright scenery can reach far across the menu without touching
+    # an arrow line, or swallow the last arrows of a Code.
+    is_clutter = ~is_arrow & (stats[:, cv2.CC_STAT_AREA] >= 20 * scale * scale)
+    is_clutter[0] = False  # the dark background
+    clutter = is_clutter[labels]
 
     codes = {}
     icons = {}
@@ -114,7 +113,7 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
     for slot, arrows in sorted(found.items()):
         if slot in rejected:
             continue
-        if slot in other_bright:
+        if _cluttered(clutter, slot, max(arrows) + 1, scale):
             # Some arrows recognised, but bright clutter on the line may hide
             # the rest of the Code: wait for a clean view.
             unreadable.add(slot)
@@ -173,21 +172,16 @@ def _icon_in_place(region: np.ndarray, slot: int, scale: float) -> bool:
     return all(sharp(a.mean(axis=e), b.mean(axis=e)) for a, b, e in edges)
 
 
-def _slots_overlapped(x: int, y: int, w: int, h: int, area: int, scale: float) -> set[int]:
-    """Slots whose arrow line a bright blob covers, ignoring specks and anything
-    left of the arrows (Icons, key hints)."""
-    left = x / scale
-    arrows_right = FIRST_ARROW_LEFT + MAX_ARROWS * ARROW_PITCH
-    if left < FIRST_ARROW_LEFT - ARROW_PITCH / 2 or left > arrows_right or area < 20 * scale * scale:
-        return set()
-    top, bottom = y / scale, (y + h) / scale
-    covered = set()
-    for slot in range(1, MAX_SLOTS + 1):
-        line_top = FIRST_ARROW_TOP + (slot - 1) * SLOT_PITCH
-        overlap = min(bottom, line_top + ARROW_SIZE) - max(top, line_top)
-        if overlap >= 0.3 * ARROW_SIZE:
-            covered.add(slot)
-    return covered
+def _cluttered(clutter: np.ndarray, slot: int, length: int, scale: float) -> bool:
+    """Whether clutter lies on the Slot's arrow line, from its first arrow to the
+    position after `length` arrows. Clutter further right cannot hide part of the
+    Code, which has no gaps; clutter left of it is Icons and key hints."""
+    top = FIRST_ARROW_TOP + (slot - 1) * SLOT_PITCH
+    left = FIRST_ARROW_LEFT
+    right = FIRST_ARROW_LEFT + length * ARROW_PITCH + ARROW_SIZE
+    rows = slice(round(top * scale), round((top + ARROW_SIZE) * scale))
+    on_line = clutter[rows, round(left * scale) : round(right * scale)].sum()
+    return on_line >= CLUTTER_PIXELS * scale * scale
 
 
 def _direction(mask: np.ndarray, scale: float) -> str | None:
