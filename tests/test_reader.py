@@ -73,6 +73,54 @@ def test_same_menu_without_glow_yields_the_full_code():
     assert reading.unreadable == set()
 
 
+@pytest.mark.parametrize(
+    "name, codes",
+    [
+        # Sky right of the menu: one bright blob whose extent spans Slots 1-5,
+        # though none of its pixels touch an arrow line.
+        ("bright_sky_beside_menu", {2: RESUPPLY, 6: AUTOCANNON_SENTRY}),
+        # A light above and right of Slot 4's short Code, past its last arrow.
+        ("bright_light_above_short_code", {4: "RDURD", 6: AUTOCANNON_SENTRY}),
+    ],
+)
+def test_bright_scenery_off_the_arrows_leaves_codes_readable(name, codes):
+    reading = _read(name)
+    assert reading.codes == codes
+    assert reading.unreadable == set()
+
+
+def test_fog_over_the_last_arrows_gives_no_shortened_code():
+    # White fog behind Resupply swallows its last two arrows; only DD is visible.
+    reading = _read("fog_over_last_arrows")
+    assert 2 not in reading.codes
+    assert 2 in reading.unreadable
+    assert reading.codes == {
+        3: "RDUULDD",
+        4: "RUUD",
+        6: WARP_PACK,
+        7: PATRIOT_EXOSUIT,
+        8: "URLR",
+    }
+
+
+def test_marker_over_the_first_arrow_makes_the_slot_unreadable():
+    # A map marker ("B2") hides Patriot Exosuit's first arrow: wait for a clean
+    # view rather than treat the Slot as not callable.
+    reading = _read("marker_over_first_arrow")
+    assert 7 not in reading.codes
+    assert reading.unreadable == {7}
+
+
+def test_ping_over_the_last_arrow_makes_the_slot_unreadable():
+    # A red map ping sits on Resupply's last arrow; its distance label sits
+    # between Slots 2 and 3 and leaves Slot 3 readable. (The yellow digits left
+    # of the Icons are an Overlay prototype, outside what the reader checks.)
+    reading = _read("ping_over_last_arrow")
+    assert 2 not in reading.codes
+    assert reading.unreadable == {2}
+    assert reading.codes == {3: "RRDLRD", 4: WARP_PACK, 5: "LDRURLU", 6: "DURDL"}
+
+
 def test_lone_arrow_while_sliding_in_gives_no_code():
     reading = _read("lone_arrow_while_sliding_in")
     assert reading.codes == {}
