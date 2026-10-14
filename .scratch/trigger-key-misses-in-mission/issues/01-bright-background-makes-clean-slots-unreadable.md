@@ -52,4 +52,6 @@ Checked on all 834 raw captures. Every changed result was inspected by eye:
 
 **More evidence (2026-10-14, from the Overlay prototype session):** in `fixtures/raw/prototype_overlay_20261014-003908.png` and `-003912.png`, a red map ping sits on Resupply's 4th arrow (Slot 2). Both the old and the fixed reader report Slot 2 unreadable, which is correct: the arrow is hidden. Four seconds later (`-003922`) the ping is gone and Slot 2 reads DDUR. Slot 3 (RRDLRD) reads in all three frames; the ping's distance label sits between the lines. So pings and markers on an arrow line are a second, legitimate source of unreadable Slots. They last as long as the ping does, and a beep there is the right outcome. Added as fixture `ping_over_last_arrow` with a test: unreadable, never `DDU`.
 
+**Merged 2026-10-14 into `trigger-keys-while-menu-open` without an in-mission test, at the player's request.** The in-mission check below is still open.
+
 **Needs the player:** play a mission on a bright map (snow, desert, open sky behind the menu) and confirm Slots no longer go unreadable with nothing on their arrows. If a Slot still beeps, send the log time; issue 03 would make it leave a screenshot behind.
