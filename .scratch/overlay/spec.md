@@ -1,8 +1,8 @@
 # The Overlay shows a Key Cap beside each Slot while the Stratagem Menu is open
 
-Status: needs-info
+Status: ready-for-agent
 
-Waiting on the in-game check of the prototype (`tools/prototype_overlay.py`, see Further Notes). Tickets are cut after it.
+Tickets are in `issues/`; see Comments.
 
 ## Problem Statement
 
@@ -70,4 +70,13 @@ A window drawn over the game, the Overlay, shows a Key Cap beside each Slot of t
   4. which style looks right (F8 cycles; the prototype labels keys 1 to 0);
   5. F7 while the menu is open: the saved Reading matches the menu.
 - **Results (2026-10-14):** 1 yes, 2 yes, 4 yellow. 5: the four F7 frames read correctly with the yellow Key Caps on screen (feedback is console-only, so it looked like nothing happened). 3: "stutters sometimes", not sure whether only while the Overlay showed. The prototype was then changed to the two-window, redraw-on-change design above; the stutter check is to be repeated with it.
-- Once answered, the validated decisions go into the tickets, and the prototype moves to a throwaway branch with a pointer from the first ticket.
+- **Stutter recheck (2026-10-14), two-window prototype run alongside the tool:** no stutter with Key Caps up or with the menu closed. The redraw count was printed only to the prototype's console, so it wasn't checked in-game. By construction it is one draw per showing, one per change of Slots and six per flash. In that session the tool made 69 Calls with the Overlay on screen.
+- The prototype is kept on branch `prototype/overlay` (commit 617e3f5) and removed from this branch.
+
+## Comments
+
+**Ticketing (2026-10-14).** Three tickets. Graph: 01 → 02 and 03 (side by side).
+
+- 01 is the whole Overlay with Key Caps only, so the tool works end to end after its merge. It includes the reader change (report every Slot with an Icon in place), the show/hide rules, the setting and the fixture safety test.
+- The red flash (02) and the ready heading (03) touch different parts of the Overlay and can run side by side.
+- The Slot 3 reader fix from the separate diagnosis session (b353008) is already on this branch, so 01's safety test runs against the fixed reader and its new fixtures (ping, marker, fog, bright sky).
