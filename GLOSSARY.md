@@ -17,12 +17,12 @@ A position in the Stratagem Menu counted from the top, starting at 1. A Slot is 
 _Avoid_: Row, index, stratagem number
 
 **Code**:
-The ordered sequence of directions the game requires to call a Stratagem.
+The ordered sequence of directions the game requires to call a Stratagem or to operate a Terminal.
 _Avoid_: Key code, combo, arrow sequence
 
 **Reading**:
-The Codes and Icons the tool observed in the Stratagem Menu at one moment.
-_Avoid_: Scan, screenshot, capture
+What the tool observed on screen at one moment: the Codes and Icons in the Stratagem Menu, or the Code a Terminal is showing.
+_Avoid_: Scan, screenshot, capture, OCR
 
 **Icon**:
 The picture the game shows beside a Stratagem in the Stratagem Menu.
@@ -55,5 +55,22 @@ _Avoid_: Timeout, listen window, one-second window
 Entering a Slot's Code on the player's behalf.
 _Avoid_: Cast, fire, macro
 
+**Terminal**:
+A mission object that asks the player for a Code after they press the Use Key at it, such as the extraction terminal.
+_Avoid_: Console, mission terminal
+
+**Use Key**:
+The key the player has bound in-game to interact with objects. E by default.
+_Avoid_: Interact key, "E"
+
+**Terminal Key**:
+A key that enters the Code a Terminal is showing, on the player's behalf. Return by default.
+_Avoid_: Enter key, return key
+
 **Overlay**:
-An optional on-screen display showing which Icon belongs to which Trigger Key.
+A display the tool draws over the game, showing Key Caps.
+_Avoid_: HUD, window
+
+**Key Cap**:
+A drawing of a key in the Overlay, placed beside the thing that key acts on, such as a Trigger Key beside its Slot.
+_Avoid_: Badge, label, key hint
