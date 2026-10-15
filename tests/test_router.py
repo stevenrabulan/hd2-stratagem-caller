@@ -40,6 +40,7 @@ class Keyboard:
         self.now = 0.0
         self.focused = focused
         self.sending = False
+        self.entering_code = False
         self.lines = []
         self.router = KeyRouter(
             call_key=CALL,
@@ -51,6 +52,7 @@ class Keyboard:
             clock=lambda: self.now,
             foreground_title=lambda: self.focused,
             is_sending=lambda: self.sending,
+            is_entering_code=lambda: self.entering_code,
             log=self.lines.append,
         )
 

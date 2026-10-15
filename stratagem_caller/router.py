@@ -60,6 +60,7 @@ class KeyRouter:
         clock: Callable[[], float],
         foreground_title: Callable[[], str],
         is_sending: Callable[[], bool],
+        is_entering_code: Callable[[], bool] = lambda: False,
         log: Callable[[str], None],
     ):
         self.call_key = call_key
@@ -72,6 +73,7 @@ class KeyRouter:
         self._clock = clock
         self._foreground_title = foreground_title
         self._is_sending = is_sending
+        self._is_entering_code = is_entering_code
         self._log = log
 
         self._lock = threading.Lock()
@@ -102,6 +104,12 @@ class KeyRouter:
             return Decision(ident not in self._swallowed)
         # A key-down that is not a repeat starts afresh, whatever was recorded before.
         self._swallowed.discard(ident)
+        if self.terminal_key.matches(event) and self._is_entering_code() and self._foreground_title() == self.window_title:
+            # The Code is being read and typed (the tool ignores its own keys meanwhile): the Terminal
+            # Key stays held back, so a second press is no weapon switch and starts no second Code.
+            self._swallowed.add(ident)
+            self._log(f"terminal key {self.terminal_key.name}: swallowed, a Code is being entered")
+            return Decision(False)
         if self._is_sending() or self.paused:
             return Decision(True)
         if self._foreground_title() != self.window_title:

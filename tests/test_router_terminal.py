@@ -149,6 +149,21 @@ def test_the_terminal_key_is_a_trigger_key_when_the_menu_is_watched_before_the_t
     assert decision.outcome == Outcome("call", "DDUR")  # Slot 1 is called, not a Code entered
 
 
+def test_the_terminal_key_stays_held_back_while_a_code_is_being_entered():
+    # Reading and typing take a moment, and the tool ignores its own keys meanwhile; a second press in
+    # that time must not slip through to the game as a weapon switch, nor start a second Code.
+    kb, _ = terminal_waiting(INTERACT)
+    assert kb.down(ONE, 1.1).enter_code
+    kb.up(ONE, 1.15)
+    kb.sending = kb.entering_code = True
+    again = kb.down(ONE, 1.4)
+    assert not again.let_through and not again.enter_code
+    assert log_has(kb, "terminal key 1: swallowed, a Code is being entered")
+    assert not kb.up(ONE, 1.45).let_through  # its release is held back too
+    kb.sending = kb.entering_code = False
+    assert kb.down(ONE, 3.0).enter_code  # and once the Code is in, the next press enters a Code again
+
+
 def test_the_terminal_key_is_back_once_the_stratagem_menu_watch_is_over():
     kb, _ = terminal_waiting(INTERACT)
     kb.down(CALL, 1.1)

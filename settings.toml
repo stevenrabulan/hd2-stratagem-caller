@@ -13,7 +13,8 @@ call_key = "b"
 use_key = "e"
 
 # While a Terminal waits for a Code (its prompt reads INTERACT), this key is swallowed
-# and the tool beeps; away from a Terminal it does what it always did: a Trigger Key
+# and the tool types the directions of the Code not yet entered (or beeps if it cannot
+# read the Code); away from a Terminal it does what it always did: a Trigger Key
 # while the Stratagem Menu is open, otherwise an ordinary key for the game. Choose one
 # that is not your Use Key.
 terminal_key = "1"

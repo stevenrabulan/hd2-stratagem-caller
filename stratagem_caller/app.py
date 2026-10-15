@@ -26,6 +26,7 @@ from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
 from .startup import Reporter, describe_startup, end_with_error, has_console, log_thread_failure, started_message  # noqa: E402
+from .terminal_code import CodeStatus, code_area, read_terminal_code  # noqa: E402
 from .terminal_prompt import prompt_area, read_terminal_prompt  # noqa: E402
 from .terminal_watch import READING_INTERVAL as TERMINAL_READING_INTERVAL, TerminalWatch  # noqa: E402
 from .winkeys import Key  # noqa: E402
@@ -74,6 +75,7 @@ class App:
         # Set from the moment a send is decided until it has been typed, so the tool
         # never reacts to its own keys. Sends may overlap, so they are counted.
         self._sending = threading.Event()
+        self._entering_code = threading.Event()  # a Terminal Key press is being read and typed
         self._sends_pending = 0
         self._count_lock = threading.Lock()
         self._send_lock = threading.Lock()
@@ -87,6 +89,7 @@ class App:
             clock=time.monotonic,
             foreground_title=winkeys.foreground_title,
             is_sending=self._sending.is_set,
+            is_entering_code=self._entering_code.is_set,
             log=log,
         )
 
@@ -139,7 +142,8 @@ class App:
                 target=self._watch_terminal, args=(decision.start_terminal_watch,), daemon=True
             ).start()
         if decision.enter_code:
-            self._spawn(self._enter_code, sends=False)
+            self._entering_code.set()  # before the key's release arrives, so a second press is held back
+            self._spawn(self._enter_code, sends=True)
         if decision.outcome is not None:
             # A Trigger Key decided at once from the Readings already taken.
             self._spawn(self._act, decision.outcome, sends=decision.outcome.sends_keys)
@@ -227,12 +231,37 @@ class App:
             self.router.end_terminal_watch("reading stopped", only=watch)
 
     def _enter_code(self) -> None:
-        """The Terminal Key was pressed while the Terminal Prompt reads INTERACT. Reading the Code
-        on the Terminal's screen and typing it is the next ticket; until then the key is held
-        back and the tool beeps (a Beep with no Slot, so only the tones, no Key Cap flash). That
-        next ticket replaces this body: read the Code, type it, or beep when it cannot be read."""
-        self._log("Code not read yet")
-        self._beep.play()
+        """The Terminal Key was pressed while the Terminal Prompt reads INTERACT: read the Code on the
+        Terminal's screen now (one look, no retry) and type the directions not yet entered. A Code that
+        cannot be read, or no Code, beeps. Runs as a send: the tool ignores its own keys meanwhile."""
+        try:
+            if not self.router.paused:
+                self._read_and_type_code()
+        finally:
+            self._entering_code.clear()
+
+    def _read_and_type_code(self) -> None:
+        started = time.perf_counter()
+        try:
+            with mss.MSS() as sct:
+                monitor = sct.monitors[1]
+                region = np.asarray(sct.grab(code_area(monitor)))[:, :, :3]
+            reading = read_terminal_code(region, monitor["height"])
+        except Exception as error:
+            self._log(f"Terminal Key: reading the Code failed, {error!r}")
+            self._beep.play()
+            raise
+        took = f"read in {(time.perf_counter() - started) * 1000:.0f} ms"
+        if reading.status is not CodeStatus.READ:
+            what = "unreadable" if reading.status is CodeStatus.UNREADABLE else "not on screen"
+            self._log(f"Terminal Key: Code {what}, {reading.why} ({took})")
+            self._beep.play()
+        elif not reading.remaining:
+            self._log(f"Terminal Key: Code {reading.code}, all {len(reading.code)} entered, nothing left to type ({took})")
+        else:
+            self._log(f"Terminal Key: Code {reading.code}, {reading.entered} entered, typing {reading.remaining} ({took})")
+            with self._send_lock:
+                self._tap_code(reading.remaining, until_paused=True)
 
     def _act(self, outcome: Outcome, trigger: Key | None = None) -> None:
         """Carry out what a Trigger Key came to. Once paused nothing is typed or tapped
