@@ -1,4 +1,6 @@
-from stratagem_caller.flash import red_slots, start_flash
+import pytest
+
+from stratagem_caller.flash import red_slots, start_flash, tone_starts
 
 
 def reds(start, times):
@@ -6,17 +8,27 @@ def reds(start, times):
     return [4 in red_slots({4: start}, t) for t in times]
 
 
-def test_a_flash_is_red_normal_red_normal_red_normal_then_stays_normal():
-    steps = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 5.0]
+def test_a_flash_is_red_normal_red_normal_then_stays_normal():
+    steps = [0.0, 0.07, 0.14, 0.15, 0.22, 0.29, 0.3, 0.37, 0.44, 0.45, 0.52, 0.59, 0.6, 0.65, 5.0]
     assert reds(10.0, [10.0 + t for t in steps]) == [
-        True, True, False, False, True, True, False, False, True, True, False, False, False, False, False,
+        True, True, True, False, False, False, True, True, True, False, False, False, False, False, False,
     ]  # fmt: skip
 
 
-def test_steps_change_at_exact_hundredths_despite_float_error():
-    # 1.3 - 1.0 is 0.30000000000000004 and 0.3 / 0.1 is 2.9999999999999996.
-    assert reds(1.0, [1.0 + 0.1, 1.0 + 0.2, 1.0 + 0.3, 1.0 + 0.4]) == [False, True, False, True]
-    assert reds(0.0, [0.1, 0.2, 0.3, 0.4, 0.5]) == [False, True, False, True, False]
+def test_steps_change_at_exact_multiples_of_a_step_despite_float_error():
+    # 1.3 - 1.0 is 0.30000000000000004; 0.45 / 0.15 is 2.9999999999999996 and 0.3 / 0.15 is 2.0.
+    assert reds(1.0, [1.0 + 0.15, 1.0 + 0.3, 1.0 + 0.45, 1.0 + 0.6]) == [False, True, False, False]
+    assert reds(0.0, [0.15, 0.3, 0.45, 0.6]) == [False, True, False, False]
+
+
+def test_a_beeps_tones_start_at_0_and_0_3_seconds_each_as_a_red_step_begins():
+    assert tone_starts(10.0) == pytest.approx((10.0, 10.3))
+    assert reds(10.0, tone_starts(10.0)) == [True, True]
+    assert reds(10.0, [at - 0.01 for at in tone_starts(10.0)[1:]]) == [False]  # the second follows a normal step
+
+
+def test_no_tone_is_due_before_the_flash_begins():
+    assert min(tone_starts(10.0)) >= 10.0
 
 
 def test_nothing_is_red_before_the_flash_begins():
@@ -27,7 +39,8 @@ def test_each_slot_flashes_on_its_own_clock():
     flashes = {1: 10.0, 2: 10.1}
     assert red_slots(flashes, 10.05) == {1}
     assert red_slots(flashes, 10.15) == {2}
-    assert red_slots(flashes, 10.25) == {1}
+    assert red_slots(flashes, 10.25) == frozenset()
+    assert red_slots(flashes, 10.35) == {1}
     assert red_slots({}, 10.0) == frozenset()
 
 

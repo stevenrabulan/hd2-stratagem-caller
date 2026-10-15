@@ -16,6 +16,7 @@ import mss  # noqa: E402
 import numpy as np  # noqa: E402
 
 from .arming import ArmingWindow, Kind, Outcome  # noqa: E402
+from .beep import DoubleBeep  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
 from .marks import RecentRegions, save_mark  # noqa: E402
 from . import overlay  # noqa: E402
@@ -42,6 +43,7 @@ class App:
         self.recent = RecentRegions(RECENT_REGIONS)
         self._marks = 0
         self._quit = threading.Event()  # ends the Overlay's thread
+        self._beep = DoubleBeep(tone=winsound.Beep)
         self.call_key = Key.named(settings.call_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
 
@@ -166,7 +168,7 @@ class App:
         (a beep is only a sound). A key held when focus was lost, or a closed menu,
         needs nothing."""
         if outcome.kind is Kind.BEEP:
-            winsound.Beep(330, 150)
+            self._beep.play()
         elif self.router.paused:
             return
         elif outcome.kind is Kind.CALL:

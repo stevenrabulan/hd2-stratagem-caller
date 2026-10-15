@@ -158,7 +158,7 @@ def test_red_does_not_keep_key_caps_up_when_none_are_wanted():
     assert screen.tick({}) == ["show", "hide"]
 
 
-def test_a_flash_is_six_draws_red_normal_three_times_then_nothing_more():
+def test_a_flash_is_four_draws_red_normal_twice_then_nothing_more():
     clock = [10.0]
     names = {1: "1", 2: "2"}
     windows = []
@@ -174,7 +174,7 @@ def test_a_flash_is_six_draws_red_normal_three_times_then_nothing_more():
         clock[0] += 1 / 30
     images = [image for kind, image in windows[0].events if kind == "show"]
     red = render_key_caps(names, 2160, red=frozenset({2}))
-    assert [np.array_equal(i, red) for i in images] == [True, False, True, False, True, False]
+    assert [np.array_equal(i, red) for i in images] == [True, False, True, False]
 
 
 # --- the ready heading ---
