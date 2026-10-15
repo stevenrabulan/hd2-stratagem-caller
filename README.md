@@ -53,12 +53,24 @@ The screen reader is developed against real screenshots. To collect them:
 .venv\Scripts\python.exe tools\capture_fixtures.py
 ```
 
-Then play a mission. Each Call Key press saves three screenshots (100, 250 and 500 ms after the press) to `fixtures/raw/`. `F9` saves a single shot, `Ctrl+Alt+Q` quits. Shots wanted:
+Then play a mission. Each Call Key press saves three screenshots (100, 250 and 500 ms after the press) to `fixtures/raw/`, named `..._pressNNN_100ms.png`. Each Use Key press (`E`) saves six (0.5, 1, 1.5, 2, 3 and 4 s after the press, to cover the walk-up to a Terminal and the Code appearing), named `..._useNNN_0500ms.png`. A held key saves one burst, not one per repeat. Most Use Key bursts will be samples, ammo and pods; ignore them. `F9` saves a single shot, `Ctrl+Alt+Q` quits.
+
+Stratagem Menu shots wanted:
 
 1. Stratagem Menu open, everything available.
 2. Stratagem Menu open, some Stratagems on cooldown or inbound.
 3. Stratagem Menu open with extra mission Stratagems (Hellbomb, SEAF Artillery, an objective).
 4. Stratagem Menu closed.
+
+Terminal shots wanted (play one or two missions and use as many kinds of Terminal as you meet; see `.scratch/terminal-codes/spec.md`):
+
+1. Each kind of Terminal with its Code showing (extraction, upload data log-in, ICBM, SEAF artillery, radar, any other).
+2. A Code with some directions entered by hand.
+3. A Code right after a wrong direction.
+4. A Terminal whose next step is not a Code (digits, grid, dial).
+5. The same kind of Terminal from two different approach angles.
+
+Crop the useful frames into `fixtures/terminal/` as PNG, then delete the raw captures (they are large and may show the desktop).
 
 ## Reference setup
 
@@ -86,4 +98,4 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 - **Screenshots look washed out or too bright.** HDR. Note it and keep the shots; recognition is meant to rely on shape, not exact colour.
 - **Screenshots are black, or show the desktop instead of the game.** The game is in exclusive fullscreen. Switch to borderless.
 - **Nothing happens when you press the Call Key in-game.** Check `fixtures/raw/captures.log` after pressing it on the desktop. If it works there but not in-game, the key hook is being blocked while the game is focused; try running the terminal as administrator.
-- **The Call Key in the script is wrong for you.** Change `CALL_KEY` at the top of `tools/capture_fixtures.py`.
+- **The Call Key or Use Key in the script is wrong for you.** Change `CALL_KEY` or `USE_KEY` at the top of `tools/capture_fixtures.py`.
