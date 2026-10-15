@@ -6,7 +6,7 @@ import pytest
 
 from stratagem_caller import reader
 from stratagem_caller.heading import PULSE_LOW, heading_box, render_heading
-from stratagem_caller.keycaps import column_box, render_key_caps
+from stratagem_caller.keycaps import column_box, render_icon, render_key_caps
 from stratagem_caller.reader import WHITE_THRESHOLD, read_menu
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "menu"
@@ -191,3 +191,33 @@ def test_the_heading_at_its_faintest_and_with_every_key_cap_does_not_change_a_me
         painted = paint(region, render_key_caps(ALL_SLOTS, 2160, red=frozenset({3})), key_caps_left, key_caps_top)
         painted = paint(painted, heading.astype(np.uint8), heading_left, heading_top, clip=True)
         assert same_reading(before, read_menu(painted))
+
+
+# --- the Key Cap with an up arrow, drawn for the Tray Icon and the shortcut ---
+
+
+@pytest.mark.parametrize("size", [16, 32, 64, 256])
+def test_icon_is_a_square_of_the_asked_size(size):
+    assert render_icon(size).shape == (size, size, 4)
+
+
+def test_icon_is_a_yellow_key_cap_with_a_dark_up_arrow_on_nothing():
+    icon = render_icon(256)
+    assert icon[0, 0, 3] == 0 and icon[255, 255, 3] == 0  # the corners are clear
+    yellow = np.all(icon == YELLOW_BGRA, axis=2)
+    dark = (icon[:, :, 3] == 255) & (icon[:, :, :3].max(axis=2) < 60)
+    assert yellow.sum() > 0.3 * 256 * 256  # the cap fills most of the picture
+    ys, xs = np.nonzero(dark)
+    assert len(ys) > 0
+    assert abs(xs.mean() - 128) < 8  # the arrow sits in the middle across
+    assert ys.min() < ys.max() - 40  # and is tall
+
+
+def test_icon_arrow_points_up():
+    icon = render_icon(256)
+    rows = ((icon[:, :, :3].max(axis=2) < 60) & (icon[:, :, 3] == 255)).sum(axis=1)
+    first, last = np.nonzero(rows)[0][[0, -1]]
+    widest = int(np.argmax(rows))
+    assert rows[first + 4] < rows[widest - 4]  # a point at the top that widens into the head
+    assert rows[widest + 8] < rows[widest] // 2  # then a narrow shaft
+    assert rows[widest + 8] == rows[last - 4]  # which stays the same width to the bottom

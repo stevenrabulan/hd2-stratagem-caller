@@ -63,6 +63,39 @@ def render_key_caps(names: dict[int, str], screen_height: int, red: frozenset[in
     return img
 
 
+# The icon is one Key Cap, in the same proportions, centred in a square of ICON_SPAN
+# units with an up arrow where a Key Cap has its glyph. Cap units: x from CAP_LEFT, y
+# from -CAP_ABOVE (relative to the middle a Slot's Key Cap would have).
+ICON_SPAN = 60
+ARROW_HEAD = ((71, -21), (84, -6), (58, -6))  # apex, then the two base corners
+ARROW_SHAFT = (66, -7, 76, 9)  # left, top, right, bottom
+
+
+def render_icon(size: int) -> np.ndarray:
+    """The Key Cap with an up arrow, `size` pixels square, on a clear background (premultiplied
+    BGRA, like a frame). Used for the Tray Icon and the desktop shortcut."""
+    s = size / ICON_SPAN
+    cap_w, cap_h = CAP_RIGHT - CAP_LEFT, CAP_ABOVE + BAR_BOTTOM
+    shift_x, shift_y = (ICON_SPAN - cap_w) / 2 - CAP_LEFT, (ICON_SPAN - cap_h) / 2 + CAP_ABOVE
+
+    def px(x: float, y: float) -> tuple[int, int]:
+        return round((x + shift_x) * s), round((y + shift_y) * s)
+
+    img = np.zeros((size, size, 4), np.uint8)
+    x0, y0 = px(CAP_LEFT, -CAP_ABOVE)
+    x1, y1 = px(CAP_RIGHT, CAP_BELOW)
+    r = max(2, round(CAP_RADIUS * s))
+    _rounded_rect(img, x0, y0, x1, y1, r, YELLOW)
+    bar_y0, bar_y1 = px(0, BAR_TOP)[1], px(0, BAR_BOTTOM)[1]
+    cv2.rectangle(img, (x0 + r, bar_y0), (x1 - r, bar_y1), YELLOW, -1, cv2.LINE_AA)
+    head = np.array([px(*p) for p in ARROW_HEAD], np.int32)
+    cv2.fillPoly(img, [head], DARK, cv2.LINE_AA)
+    left, top = px(ARROW_SHAFT[0], ARROW_SHAFT[1])
+    right, bottom = px(ARROW_SHAFT[2], ARROW_SHAFT[3])
+    cv2.rectangle(img, (left, top), (right, bottom), DARK, -1, cv2.LINE_AA)
+    return img
+
+
 def _draw_key_cap(img: np.ndarray, slot: int, text: str, fill: tuple, s: float, origin_x: int) -> None:
     middle = reader.ICON_TOP + reader.ICON_SIZE / 2 + (slot - 1) * reader.SLOT_PITCH
     x0, x1 = round(CAP_LEFT * s) - origin_x, round(CAP_RIGHT * s) - origin_x

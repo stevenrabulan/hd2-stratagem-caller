@@ -1,5 +1,6 @@
 """Listen for the Call Key, Trigger Keys and Direct Keys, and make Calls."""
 
+import os
 import random
 import threading
 import time
@@ -20,6 +21,7 @@ from .beep import DoubleBeep  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
 from .marks import RecentRegions, save_mark  # noqa: E402
 from . import overlay  # noqa: E402
+from . import tray  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
@@ -37,13 +39,23 @@ FIRST_READING_DELAY = 0.15
 
 
 class App:
-    def __init__(self, settings: Settings, log: Callable[[str], None] = lambda text: None):
+    def __init__(
+        self,
+        settings: Settings,
+        log: Callable[[str], None] = lambda text: None,
+        tone: Callable[[int, int], None] = winsound.Beep,
+    ):
+        """`tone(hz, ms)` sounds one tone and returns when it ends."""
         self.settings = settings
         self._log = log
+        self._tone = tone
         self.recent = RecentRegions(RECENT_REGIONS)
         self._marks = 0
-        self._quit = threading.Event()  # ends the Overlay's thread
-        self._beep = DoubleBeep(tone=winsound.Beep)
+        self._quit = threading.Event()  # ends the Overlay's thread and the tool's main loop
+        self._overlay_thread: threading.Thread | None = None
+        self._beep = DoubleBeep(tone=tone)
+        self.on_pause_change: Callable[[], None] = lambda: None  # the Tray Icon follows the pause state
+        self._pause_lock = threading.Lock()
         self.call_key = Key.named(settings.call_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
 
@@ -69,7 +81,7 @@ class App:
     def start_overlay(self, monitor: dict) -> None:
         """Run the Overlay on its own thread, unless the settings turn it off, in which
         case no window is created."""
-        overlay.start_overlay(
+        self._overlay_thread = overlay.start_overlay(
             enabled=self.settings.overlay_enabled,
             key_caps=self.router.key_caps,
             red_key_caps=self.router.red_key_caps,
@@ -83,7 +95,21 @@ class App:
         print(f"  Warning: the Overlay stopped ({error!r}); Trigger Keys still work.")
 
     def stop(self) -> None:
+        """Ask the tool to end: the Overlay closes and the main loop returns. Called for
+        Quit in the Tray Icon's menu; Ctrl+C reaches the same shutdown."""
         self._quit.set()
+
+    @property
+    def quit_requested(self) -> bool:
+        return self._quit.is_set()
+
+    def shutdown(self) -> None:
+        """Everything the tool put in place goes away: the Overlay's windows, and the
+        keyboard hook and hotkeys, so every key goes back to the game. Safe to repeat."""
+        self.stop()
+        if self._overlay_thread is not None:
+            self._overlay_thread.join(timeout=2)  # it closes its windows on the way out
+        keyboard.unhook_all()
 
     # --- keyboard hook (must return quickly; True lets the key through) ---
 
@@ -213,7 +239,7 @@ class App:
         self._log(f"MARK {number}: {self.router.describe()}")
         regions = self.recent.snapshot()
         threading.Thread(target=self._save_mark, args=(number, marked_at, regions), daemon=True).start()
-        winsound.Beep(1200, 60)
+        self._tone(1200, 60)
 
     def _save_mark(self, number: int, marked_at: float, regions: list) -> None:
         with mss.MSS() as sct:
@@ -224,20 +250,54 @@ class App:
     # --- pause ---
 
     def toggle_pause(self) -> None:
-        self.router.paused = not self.router.paused
-        # Runs on the pause hotkey's thread; the worker sees the watch is gone and exits.
-        # A Trigger Key still held is given back to the game.
-        held = self.router.end_watch("paused") if self.router.paused else None
-        if held is not None:
-            self._spawn(self._hand_back, held, sends=True)
-        winsound.Beep(440 if self.router.paused else 880, 120)
-        print("paused" if self.router.paused else "resumed")
+        """Pause or resume. The pause hotkey and the Tray Icon's menu both come here, on their
+        own threads, so the two always agree and the Tray Icon follows either."""
+        with self._pause_lock:
+            self.router.paused = not self.router.paused
+            # The worker sees the watch is gone and exits. A Trigger Key still held is
+            # given back to the game.
+            held = self.router.end_watch("paused") if self.router.paused else None
+            if held is not None:
+                self._spawn(self._hand_back, held, sends=True)
+            self._tone(440 if self.router.paused else 880, 120)
+            print("paused" if self.router.paused else "resumed")
+        self.on_pause_change()
 
 
 def _menu_area(monitor: dict) -> dict:
     """The top-left screen region the reader needs."""
     width, height = region_size(monitor["height"])
     return {"left": monitor["left"], "top": monitor["top"], "width": width, "height": height}
+
+
+def _open_log(log: Callable[[str], None]) -> None:
+    """Open the event log in the default viewer. Runs on the Tray Icon's thread."""
+    try:
+        os.startfile(LOG_PATH)
+    except OSError as error:
+        log(f"Open log failed: {error!r}")
+        print(f"  Warning: could not open {LOG_PATH}: {error}")
+
+
+def _start_tray(app: App, log: Callable[[str], None]) -> tray.TrayIcon | None:
+    """Show the Tray Icon, or say why not: losing it must not lose the keyboard."""
+    try:
+        running = tray.load_icon()
+        icon = tray.TrayIcon(
+            paused=lambda: app.router.paused,
+            toggle_pause=app.toggle_pause,
+            open_log=lambda: _open_log(log),
+            quit=app.stop,
+            running_image=running,
+            paused_image=tray.greyed(running),
+        )
+        icon.start()
+    except Exception as error:
+        log(f"Tray Icon failed to start: {error!r}")
+        print(f"  Warning: the Tray Icon failed to start ({error!r}); Ctrl+C here still quits.")
+        return None
+    app.on_pause_change = icon.refresh
+    return icon
 
 
 def main() -> None:
@@ -257,12 +317,18 @@ def main() -> None:
     print(f"  Logging Trigger Keys and Calls to {LOG_PATH}")
     print(f"  Overlay (Key Caps beside each Slot and a ready heading while the menu is open): {'on' if settings.overlay_enabled else 'off'}")
     app.start_overlay(monitor)
-    keyboard.hook(app.on_event, suppress=True)
-    keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
-    keyboard.add_hotkey(settings.mark_key, app.mark)
+    tray_icon = _start_tray(app, log.write)
     try:
-        while True:
-            time.sleep(1)
+        keyboard.hook(app.on_event, suppress=True)
+        keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
+        keyboard.add_hotkey(settings.mark_key, app.mark)
+        # Ctrl+C here and Quit in the Tray Icon's menu both end up in the shutdown below.
+        while not app.quit_requested:
+            time.sleep(0.2)
     except KeyboardInterrupt:
         pass
-    app.stop()
+    finally:
+        if tray_icon is not None:
+            tray_icon.stop()
+        app.shutdown()
+        log.close()

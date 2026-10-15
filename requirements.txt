@@ -3,3 +3,5 @@ mss==10.2.0
 numpy
 opencv-python-headless
 pytest
+pystray==0.19.5
+Pillow==12.3.0

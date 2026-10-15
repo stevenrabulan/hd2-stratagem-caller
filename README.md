@@ -12,7 +12,7 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 
 ## Running
 
-Start it before or during a mission, and leave the terminal open:
+Start it before or during a mission, and leave the terminal open (or use the Tray Icon's Quit to end it):
 
 ```bash
 .venv\Scripts\python.exe -m stratagem_caller
@@ -21,6 +21,7 @@ Start it before or during a mission, and leave the terminal open:
 - Press the Call Key, then `1`–`9` or `0` while the menu is open. While the menu is already open the Call starts the moment you press the key. If you press it while the menu is still sliding in, the Call starts as soon as that Slot's Code has been read, which is usually within a quarter of a second or so.
 - Two low beeps (and two red flashes of the Key Cap, if the Slot has one) mean that Slot has no Stratagem you can call right now (cooldown, inbound, or empty), or it could not be read in time, or it is beyond the end of the menu.
 - `Ctrl+Alt+P` pauses and resumes. `Ctrl+C` in the terminal quits.
+- **Tray Icon**: while the tool runs, a yellow Key Cap with an up arrow sits in the Windows notification area (it may be under the `^` overflow arrow; drag it out to keep it visible). It is greyed while the tool is paused, and its tooltip says Running or Paused. Right-click it for **Pause** or **Resume** (the same toggle as `Ctrl+Alt+P`, so the icon follows either), **Open log** (opens `logs/stratagem_caller.log` in your default viewer), and **Quit**. Quit and `Ctrl+C` do the same shutdown: the Overlay and the Tray Icon go away and every key goes back to the game. The icon file is [stratagem_caller/assets/stratagem_caller.ico](stratagem_caller/assets/stratagem_caller.ico); `tools\make_icon.py` redraws it from the Overlay's Key Cap drawing.
 - `F9` marks something unexpected: it gives a short high beep, writes a `MARK` line to `logs/stratagem_caller.log` with what the tool believed at that moment, and saves the screen regions it read in the last few seconds to `fixtures/raw/marks/`. Press it right after the problem, then share the mark number.
 - The Overlay is a click-through window that never takes focus and shows in captures and recordings. Key Caps only appear once the tool has confirmed the menu is open, so they can linger a moment (up to about 0.6 s) after the menu really closes if gunfire was hiding it.
 - Keys, timing, the Overlay and Direct Keys are set in [settings.toml](settings.toml).
