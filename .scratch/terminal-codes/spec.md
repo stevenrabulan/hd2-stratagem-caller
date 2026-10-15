@@ -1,8 +1,8 @@
 # The Terminal Key enters the Code a Terminal is showing
 
-Status: needs-info
+Status: ready-for-agent
 
-Behaviour settled in two grilling rounds (2026-10-13 and 2026-10-15, after the fixtures in issue 01). Reader tickets are still to be cut.
+Behaviour settled in two grilling rounds (2026-10-13 and 2026-10-15, after the fixtures in issue 01). Tickets are in `issues/`; see Comments.
 
 ## Problem Statement
 
@@ -44,3 +44,12 @@ Each Use Key press makes the tool look for a Terminal's Code. While one is on sc
 
 - `upload_data_login_steam.jpg` (in this folder): a Steam screenshot of the Upload Data log-in Terminal at 3840x2160, Code ↑ ↓ ← ↑ ↓. JPEG, so it is for design only, not a test fixture.
 - Research notes (2026-10-13): Arrowhead's input doc lists Use as `E`, Hold, and Open Chat as `Enter`, Press. It has no separate terminal bind group.
+
+## Comments
+
+**Ticketing (2026-10-15).** Four tickets after the resolved capture ticket 01. Graph: 02 → 03 → 04, and 03 → 05.
+
+- 02 builds the whole path (Use Key, watch, Terminal Prompt, Terminal Key decision, settings) with a beep in place of typing, so it is useful alone: `1` no longer switches weapon at a Terminal.
+- 03 is the angled Code reader and the typing together, because typing can't be checked without reading. It is the largest ticket.
+- 04 adds the ENTER CODE Key Cap and its flash once a Code can be read.
+- 05 is the player's second capture mission (extraction terminal, a wrong press). The capture can happen any time; its tests need 03.
