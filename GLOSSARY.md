@@ -67,6 +67,10 @@ _Avoid_: Interact key, "E"
 A key that enters the Code a Terminal is showing, on the player's behalf. 1 by default. While no Terminal's Code is read, the same key does whatever it otherwise would.
 _Avoid_: Enter key, return key
 
+**Terminal Prompt**:
+The game's prompt at the bottom centre of the screen showing the Direction Keys while a Terminal waits for input: INTERACT when it wants a Code, MOVE CURSOR for a grid.
+_Avoid_: HUD prompt, interact prompt
+
 **Overlay**:
 A display the tool draws over the game, showing Key Caps and the Ready Heading.
 _Avoid_: HUD, window

@@ -12,12 +12,12 @@ Then the player plays one or two missions and uses as many kinds of Terminal as 
 
 **Blocked by:** none
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] A Use Key press saves a labelled burst; a held Use Key saves one burst, not one per repeat
 - [x] Call Key bursts work as before
 - [x] The README lists the Terminal shots wanted
-- [ ] (player) Terminal bursts collected; the useful frames cropped into `fixtures/terminal/` as PNG before the raw captures are deleted
+- [x] (player) Terminal bursts collected; the useful frames cropped into `fixtures/terminal/` as PNG before the raw captures are deleted
 
 ## Comments
 
@@ -36,3 +36,7 @@ Judgement calls:
 - Seams were not confirmed with Steven (away); chose `BurstTrigger` and `BurstKind` as the only tested interface, and left the hook and screen code untested.
 
 To do (the unticked box): on Windows, run `.venv\Scripts\python.exe tools\capture_fixtures.py`, check the startup text lists both keys, press `E` at a Terminal and confirm six `_use001_` files appear (holding `E` still gives one burst) and that a `B` press still gives three `_press` files. Then play one or two missions, work through the five shots listed above, crop the useful frames into `fixtures/terminal/` as PNG, and delete the raw captures. Tick the box and set the status to resolved.
+
+**Resolved 2026-10-15.** The capture tool ran on Windows: 44 Use Key bursts of six shots each (42 in-game). Eight frames cropped into `fixtures/terminal/` (see its README). The raw captures (about 17 GB in `fixtures/raw/`) are not deleted yet.
+
+Coverage against the list above: 1 only partly (one Prospecting Drill Terminal, plus the Upload Data log-in screenshot in this folder; no extraction, ICBM, SEAF or radar Terminal); 2 yes (two and five directions entered); 3 no (no wrong direction); 4 yes (a bar step and a grid step); 5 yes (two angles of the same Terminal).
