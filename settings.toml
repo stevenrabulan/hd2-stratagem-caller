@@ -52,7 +52,7 @@ R = "right"
 "page down" = "Reinforce"
 
 # The Overlay draws a Key Cap beside each Stratagem in the open menu, showing its
-# Trigger Key. Set enabled = false to draw nothing over the game; Trigger Keys work
-# the same either way.
+# Trigger Key, and a pulsing STRATAGEM CALLER READY heading. Set enabled = false to
+# draw nothing over the game; Trigger Keys work the same either way.
 [overlay]
 enabled = true

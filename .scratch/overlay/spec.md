@@ -1,8 +1,8 @@
 # The Overlay shows a Key Cap beside each Slot while the Stratagem Menu is open
 
-Status: ready-for-agent
+Status: ready-for-human
 
-Tickets are in `issues/`; see Comments.
+Tickets are in `issues/`; see Comments. All three are repo-complete; only the in-game player checks are left.
 
 ## Problem Statement
 
@@ -38,7 +38,7 @@ A window drawn over the game, the Overlay, shows a Key Cap beside each Slot of t
 - **Placement:** left of the Icon, in the gutter between the menu's bracket and the Icon, vertically centred on the Icon. At 3840x2160 about 50 px square, ending left of x=98. Everything scales with screen height, as the reader does.
 - **Look:** the shape of the game's own key hints (seen in a Terminal screenshot: `TAB`, `OPEN CHAT`), a filled rounded square with a dark glyph and a thin bar of the fill colour underneath, filled in the game's yellow (#FFE900). Chosen in-game over a light fill and an outlined style.
 - **Red flash:** on any beep, the pressed Trigger Key's Key Cap fill turns red three times in about 0.6 s (100 ms red, 100 ms normal). The beep sound is unchanged.
-- **Ready heading:** STRATAGEM CALLER READY, uppercase, in the game's yellow (#FFE900), on the line of the game's STRATAGEMS header, just right of it, with a soft glow. The whole heading pulses in opacity about once a second. Shown and hidden with the Key Caps.
+- **Ready heading:** STRATAGEM CALLER READY, uppercase, in the game's yellow (#FFE900), on the line of the game's STRATAGEMS header, just right of it, with a soft glow. The whole heading pulses in opacity about once every 1.2 s. Shown and hidden with the Key Caps.
 - **The reader sees the Overlay.** The window is not excluded from screen capture, so it shows in streams and recordings. Instead the Overlay keeps out of every pixel the reader checks: nothing pure white, nothing on the arrow lines (x >= 215 at 4K on Slot rows), nothing within a few pixels of an Icon's edges. This was chosen over excluding the window from capture because players may want the Overlay in their recordings; it is easy to reverse.
 - **The windows:** two small always-on-top, click-through windows that never take focus, one a column for the Key Caps and one a strip for the heading. The Key Caps are redrawn only when something changes (Slots, a flash step). The heading is drawn once and pulsed by fading its whole window, which costs almost nothing per frame. Both are drawn with per-pixel transparency through the Win32 calls the tool already uses and OpenCV. No new dependency. It runs on its own thread inside the tool's process.
 - **Settings:** `[overlay] enabled = true` by default. Off means no window is created.

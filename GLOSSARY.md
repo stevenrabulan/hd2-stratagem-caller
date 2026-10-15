@@ -68,12 +68,16 @@ A key that enters the Code a Terminal is showing, on the player's behalf. Return
 _Avoid_: Enter key, return key
 
 **Overlay**:
-A display the tool draws over the game, showing Key Caps.
+A display the tool draws over the game, showing Key Caps and the Ready Heading.
 _Avoid_: HUD, window
 
 **Key Cap**:
 A drawing of a key in the Overlay, placed beside the thing that key acts on, such as a Trigger Key beside its Slot.
 _Avoid_: Badge, label, key hint
+
+**Ready Heading**:
+The pulsing STRATAGEM CALLER READY text in the Overlay, just right of the game's STRATAGEMS header. It shows and hides at exactly the moments the Key Caps do.
+_Avoid_: Banner, title
 
 **Beep**:
 The sound the tool makes when a Trigger Key cannot call its Slot (not callable, unreadable too long, or beyond the end of the menu).

@@ -123,6 +123,7 @@ class LayeredWindow:
         self.width, self.height = width, height
         self._hwnd = self._screen_dc = self._memory_dc = self._bitmap = None
         self._shown = False
+        self._opacity = 255  # the whole window's opacity; the picture's own alpha is on top of it
         try:
             self._create(api, left, top, width, height)
         except Exception:
@@ -148,12 +149,13 @@ class LayeredWindow:
         api.gdi32.SelectObject(self._memory_dc, self._bitmap)
 
     def show(self, image: np.ndarray) -> None:
-        """Show `image` (height x width x 4, premultiplied BGRA), becoming visible if hidden."""
+        """Show `image` (height x width x 4, premultiplied BGRA) at the window's opacity,
+        becoming visible if hidden."""
         if image.shape != (self.height, self.width, 4):
             raise ValueError(f"picture is {image.shape}, window is {(self.height, self.width, 4)}")
         image = np.ascontiguousarray(image)
         ctypes.memmove(self._bits, image.ctypes.data, image.nbytes)
-        blend = _BLENDFUNCTION(AC_SRC_OVER, 0, 255, AC_SRC_ALPHA)
+        blend = _BLENDFUNCTION(AC_SRC_OVER, 0, self._opacity, AC_SRC_ALPHA)
         updated = self._api.user32.UpdateLayeredWindow(
             self._hwnd, self._screen_dc, ctypes.byref(self._position), ctypes.byref(self._size),
             self._memory_dc, ctypes.byref(wintypes.POINT(0, 0)), 0, ctypes.byref(blend), ULW_ALPHA,
@@ -165,6 +167,22 @@ class LayeredWindow:
                 self._hwnd, wintypes.HWND(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
             )  # fmt: skip
             self._shown = True
+
+    def set_opacity(self, opacity: int) -> None:
+        """Fade the whole window (0 invisible to 255 as drawn) without sending its picture
+        again. Kept for the next `show` too. Call it before the first `show` or after."""
+        if not 0 <= opacity <= 255:
+            raise ValueError(f"opacity {opacity} is outside 0 to 255")
+        if opacity == self._opacity:
+            return
+        self._opacity = opacity
+        if self._shown:
+            # No picture or position: only the blend changes, so this is cheap.
+            blend = _BLENDFUNCTION(AC_SRC_OVER, 0, opacity, AC_SRC_ALPHA)
+            updated = self._api.user32.UpdateLayeredWindow(
+                self._hwnd, None, None, None, None, None, 0, ctypes.byref(blend), ULW_ALPHA
+            )  # fmt: skip
+            _check(updated, "UpdateLayeredWindow")
 
     def hide(self) -> None:
         if self._shown:

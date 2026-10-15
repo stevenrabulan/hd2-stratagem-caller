@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from stratagem_caller import reader
+from stratagem_caller.heading import PULSE_LOW, heading_box, render_heading
 from stratagem_caller.keycaps import column_box, render_key_caps
 from stratagem_caller.reader import WHITE_THRESHOLD, read_menu
 
@@ -123,10 +124,14 @@ def test_a_long_key_name_is_shortened_to_fit_the_key_cap():
 # --- the Overlay cannot change a Reading ---
 
 
-def paint(region, frame, left, top):
-    """Composite a premultiplied BGRA frame onto a BGR region, as the screen does."""
+def paint(region, frame, left, top, clip=False):
+    """Composite a premultiplied BGRA frame onto a BGR region, as the screen does. With
+    `clip`, a frame reaching past the region is cut off (the reader never sees past it)."""
     out = region.copy()
     height, width = frame.shape[:2]
+    if clip:
+        height, width = min(height, out.shape[0] - top), min(width, out.shape[1] - left)
+        frame = frame[:height, :width]
     behind = out[top : top + height, left : left + width].astype(np.int32)
     alpha = frame[:, :, 3:4].astype(np.int32)
     out[top : top + height, left : left + width] = frame[:, :, :3] + (behind * (255 - alpha) + 127) // 255
@@ -162,3 +167,27 @@ def test_key_caps_painted_on_a_menu_do_not_change_its_reading(path):
             painted = paint(region, render_key_caps(names, 2160, red=red), left, top)
             assert names is listed or not np.array_equal(painted, region)
             assert same_reading(before, read_menu(painted))
+
+
+@pytest.mark.parametrize("path", MENU_FIXTURES, ids=lambda p: p.stem)
+def test_the_heading_painted_where_it_sits_does_not_change_a_menus_reading(path):
+    region = cv2.imread(str(path))
+    before = read_menu(region)
+    left, top, _, _ = heading_box(2160)
+    painted = paint(region, render_heading(2160), left, top, clip=True)
+    assert not np.array_equal(painted, region)
+    assert same_reading(before, read_menu(painted))
+
+
+@pytest.mark.parametrize("path", MENU_FIXTURES, ids=lambda p: p.stem)
+def test_the_heading_at_its_faintest_and_with_every_key_cap_does_not_change_a_menus_reading(path):
+    """Everything the Overlay can have up at once, the heading at full strength and mid-fade."""
+    region = cv2.imread(str(path))
+    before = read_menu(region)
+    key_caps_left, key_caps_top, _, _ = column_box(2160)
+    heading_left, heading_top, _, _ = heading_box(2160)
+    for opacity in (255, PULSE_LOW):
+        heading = render_heading(2160).astype(np.int32) * opacity // 255  # a faded window, as the screen blends it
+        painted = paint(region, render_key_caps(ALL_SLOTS, 2160, red=frozenset({3})), key_caps_left, key_caps_top)
+        painted = paint(painted, heading.astype(np.uint8), heading_left, heading_top, clip=True)
+        assert same_reading(before, read_menu(painted))

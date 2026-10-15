@@ -253,7 +253,7 @@ def main() -> None:
         print(f"  Direct Key [{key}] -> {code}")
     print(f"  [{settings.pause_key}] pause/resume, [{settings.mark_key}] mark something unexpected, Ctrl+C here to quit")
     print(f"  Logging Trigger Keys and Calls to {LOG_PATH}")
-    print(f"  Overlay (Key Caps beside each Slot while the menu is open): {'on' if settings.overlay_enabled else 'off'}")
+    print(f"  Overlay (Key Caps beside each Slot and a ready heading while the menu is open): {'on' if settings.overlay_enabled else 'off'}")
     app.start_overlay(monitor)
     keyboard.hook(app.on_event, suppress=True)
     keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
