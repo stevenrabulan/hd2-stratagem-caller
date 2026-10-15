@@ -8,7 +8,7 @@ import pytest
 from test_terminal_prompt import grab, screen_with
 
 from stratagem_caller import app as app_module
-from stratagem_caller import terminal_watch, winkeys
+from stratagem_caller import startup, terminal_watch, winkeys
 from stratagem_caller.app import ROOT, App
 from stratagem_caller.settings import load
 from stratagem_caller.terminal_code import code_area
@@ -268,3 +268,57 @@ def test_the_terminal_watch_worker_reads_the_prompt_until_it_has_gone(monkeypatc
     assert shown[:3] == [TerminalPrompt.INTERACT] * 3 and shown[-1] is TerminalPrompt.NONE
     assert all(area == prompt_area({"left": 0, "top": 0, "width": 3840, "height": 2160}) for area in areas)
     assert any("Terminal watch ended: Terminal Prompt gone" in line for line in terminal.lines)
+
+
+# --- only one copy runs ---
+
+
+class FakeLock:
+    def __init__(self):
+        self.released = False
+
+    def release(self):
+        self.released = True
+
+
+class LaunchRoom:
+    """main() with the OS, the screen, the keyboard, sound and the Tray Icon replaced."""
+
+    def __init__(self, monkeypatch, tmp_path, lock):
+        self.events = []
+        events = self.events
+
+        class Tray:
+            def notify(self, message):
+                events.append(("notify", message))
+
+            def stop(self):
+                events.append(("tray stopped",))
+
+        class Keyboard:
+            def __getattr__(self, name):
+                events.append(("keyboard", name))  # any use at all is a failure for these tests
+                raise AssertionError(f"the keyboard was used: {name}")
+
+        monkeypatch.setattr(app_module, "LOG_PATH", tmp_path / "log.txt")
+        monkeypatch.setattr(app_module, "claim", lambda: lock)
+        monkeypatch.setattr(app_module, "_make_tray", lambda *args, **kwargs: Tray())
+        monkeypatch.setattr(app_module, "_beep_once", lambda: events.append(("beep",)))
+        monkeypatch.setattr(app_module, "keyboard", Keyboard())
+        monkeypatch.setattr(startup, "STOPPED_NOTICE_SECONDS", 0)
+        monkeypatch.setattr(threading, "excepthook", threading.excepthook)  # main() replaces it
+
+
+def test_a_second_launch_notifies_beeps_once_and_exits_without_touching_the_keyboard(monkeypatch, tmp_path):
+    room = LaunchRoom(monkeypatch, tmp_path, lock=None)  # another copy holds the lock
+    app_module.main()  # returns instead of running
+    assert room.events == [("notify", "Stratagem Caller is already running"), ("beep",), ("tray stopped",)]
+
+
+def test_a_launch_that_holds_the_lock_lets_go_of_it_when_it_ends(monkeypatch, tmp_path):
+    lock = FakeLock()
+    LaunchRoom(monkeypatch, tmp_path, lock=lock)
+    monkeypatch.setattr(app_module, "load", lambda *paths: (_ for _ in ()).throw(ValueError("settings.toml is broken")))
+    with pytest.raises(ValueError, match="settings.toml is broken"):
+        app_module.main()
+    assert lock.released

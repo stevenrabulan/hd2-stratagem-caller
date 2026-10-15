@@ -1,4 +1,5 @@
-"""What the tool says when it starts and when an error ends it, with or without a console.
+"""What the tool says when it starts, when an error ends it, and when it is already running,
+with or without a console.
 
 Started from a terminal, startup lines are printed as they always were. Started from the desktop
 shortcut there is no console (pythonw.exe), so those lines go to the event log instead. Warnings
@@ -16,7 +17,8 @@ from .reader import REFERENCE_HEIGHT
 from .settings import Settings
 
 STOPPED_NOTICE = "Stratagem Caller stopped: see log"
-# How long the stopped notice stays up before the Tray Icon is removed (removing the icon can
+ALREADY_RUNNING_NOTICE = "Stratagem Caller is already running"
+# How long a closing notice stays up before the Tray Icon is removed (removing the icon can
 # take its notification with it).
 STOPPED_NOTICE_SECONDS = 5.0
 
@@ -92,13 +94,42 @@ def end_with_error(
     """An unexpected error ended the tool: the full traceback goes to the log, the stopped notice
     is shown, and the Tray Icon is removed. The caller has already given the keyboard back."""
     log("Stopped by an unexpected error:\n" + "".join(traceback.format_exception(error)).rstrip())
+    _show_closing_notice(STOPPED_NOTICE, tray=tray, log=log, sleep=sleep)
+
+
+def refuse_second_launch(
+    *,
+    tray,
+    beep: Callable[[], None],
+    log: Callable[[str], None],
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Another copy of the tool holds the keyboard: say so, beep once, and remove the Tray Icon
+    (a bare one, just to carry the notice). The caller exits without hooking anything."""
+    log(f"{ALREADY_RUNNING_NOTICE}: this launch exits")
+    _show_closing_notice(ALREADY_RUNNING_NOTICE, tray=tray, log=log, sleep=sleep, also=beep)
+
+
+def _show_closing_notice(notice: str, *, tray, log, sleep, also: Callable[[], None] | None = None) -> None:
+    """Show `notice`, do `also` (a beep), give the notice time to be read, then remove the Tray
+    Icon. The icon goes whatever fails on the way."""
     try:
-        tray.notify(STOPPED_NOTICE)
-    except Exception as notice_error:
-        log(f"Notification failed ({STOPPED_NOTICE!r}): {notice_error!r}")
-    else:
-        sleep(STOPPED_NOTICE_SECONDS)
-    tray.stop()
+        try:
+            tray.notify(notice)
+        except Exception as error:
+            log(f"Notification failed ({notice!r}): {error!r}")
+            shown = False
+        else:
+            shown = True
+        if also is not None:
+            try:
+                also()
+            except Exception as error:
+                log(f"Sound failed ({notice!r}): {error!r}")
+        if shown:
+            sleep(STOPPED_NOTICE_SECONDS)
+    finally:
+        tray.stop()
 
 
 def log_thread_failure(log: Callable[[str], None]) -> Callable:

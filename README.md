@@ -28,6 +28,7 @@ Then double-click **Stratagem Caller** on the desktop. It opens no terminal wind
 - If an unexpected error ends the tool, the full traceback is written to the log, a **Stratagem Caller stopped: see log** notification appears, and the Tray Icon goes away. Keys go back to the game first.
 - **If the game ignores the tool's keys**, the game is probably running as administrator and ignoring keys from a non-elevated program. Right-click the shortcut, choose Properties, then Advanced, and tick **Run as administrator**.
 - To quit, use the Tray Icon's **Quit** (below).
+- **Only one copy runs at a time** (two would type every Call twice), however it was started. Launching a second copy shows **Stratagem Caller is already running**, beeps once, and exits without touching the keyboard; the first copy carries on. The lock is released when the tool ends, including after a crash or when it is killed, so the next launch starts normally. If the first copy runs as administrator and the second does not, the second is still refused.
 
 ### From a terminal
 

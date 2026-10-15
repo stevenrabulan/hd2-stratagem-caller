@@ -6,12 +6,14 @@ import pytest
 
 from stratagem_caller.settings import load
 from stratagem_caller.startup import (
+    ALREADY_RUNNING_NOTICE,
     STOPPED_NOTICE,
     Reporter,
     describe_startup,
     end_with_error,
     has_console,
     log_thread_failure,
+    refuse_second_launch,
     started_message,
 )
 
@@ -172,3 +174,41 @@ def test_an_error_in_a_worker_thread_is_logged_in_full():
         hook(SimpleNamespace(exc_type=type(error), exc_value=error, exc_traceback=error.__traceback__, thread=SimpleNamespace(name="Thread-7")))
     assert len(lines) == 1
     assert "Thread-7" in lines[0] and "broken_function_name_for_the_traceback" in lines[0] and "screen 0 is not there" in lines[0]
+
+
+# --- a second launch ---
+
+
+def test_a_second_launch_shows_the_already_running_notice_beeps_once_and_removes_the_tray():
+    events, lines = [], []
+    refuse_second_launch(
+        tray=FakeTray(events),
+        beep=lambda: events.append(("beep",)),
+        log=lines.append,
+        sleep=lambda seconds: events.append(("wait", seconds)),
+    )
+    assert ALREADY_RUNNING_NOTICE == "Stratagem Caller is already running"
+    assert events == [("notify", ALREADY_RUNNING_NOTICE), ("beep",), ("wait", pytest.approx(5.0)), ("stop",)]
+    assert lines == [ALREADY_RUNNING_NOTICE + ": this launch exits"]
+
+
+def test_a_second_launch_still_beeps_and_exits_when_the_notice_cannot_be_shown():
+    events, lines = [], []
+
+    class NoNotice(FakeTray):
+        def notify(self, message):
+            raise RuntimeError("never appeared")
+
+    refuse_second_launch(tray=NoNotice(events), beep=lambda: events.append(("beep",)), log=lines.append, sleep=lambda seconds: None)
+    assert events == [("beep",), ("stop",)]
+    assert any("Notification failed" in line and "never appeared" in line for line in lines)
+
+
+def test_a_second_launch_removes_the_tray_even_when_the_beep_fails():
+    events = []
+
+    def broken_beep():
+        raise RuntimeError("no sound device")
+
+    refuse_second_launch(tray=FakeTray(events), beep=broken_beep, log=lambda text: None, sleep=lambda seconds: None)
+    assert events[-1] == ("stop",)

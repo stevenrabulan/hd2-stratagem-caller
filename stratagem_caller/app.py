@@ -17,15 +17,25 @@ import mss  # noqa: E402
 import numpy as np  # noqa: E402
 
 from .arming import ArmingWindow, Kind, Outcome  # noqa: E402
-from .beep import DoubleBeep  # noqa: E402
+from .beep import TONE_HZ, TONE_MS, DoubleBeep  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
+from .instance_guard import claim  # noqa: E402
 from .marks import RecentRegions, save_mark  # noqa: E402
 from . import overlay  # noqa: E402
 from . import tray  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
-from .startup import Reporter, describe_startup, end_with_error, has_console, log_thread_failure, started_message  # noqa: E402
+from .startup import (  # noqa: E402
+    ALREADY_RUNNING_NOTICE,
+    Reporter,
+    describe_startup,
+    end_with_error,
+    has_console,
+    log_thread_failure,
+    refuse_second_launch,
+    started_message,
+)
 from .terminal_code import CodeStatus, code_area, read_terminal_code  # noqa: E402
 from .terminal_prompt import prompt_area, read_terminal_prompt  # noqa: E402
 from .terminal_watch import READING_INTERVAL as TERMINAL_READING_INTERVAL, TerminalWatch  # noqa: E402
@@ -393,22 +403,35 @@ def _start_tray(app: App, log: Callable[[str], None], report: Reporter) -> tray.
     return icon
 
 
-def _icon_for_the_stopped_notice(log: Callable[[str], None]):
-    """The error came before the Tray Icon was shown (for example a settings.toml mistake). Show a
-    bare one, with nothing in its menu doing anything, just to carry the stopped notice."""
+def _bare_tray_icon(log: Callable[[str], None]):
+    """Show a Tray Icon with nothing in its menu doing anything, just to carry a notice when the
+    real one is not (yet) there: an error before it was shown (for example a settings.toml
+    mistake), or a second launch."""
     try:
         return _make_tray(log, paused=lambda: False, toggle_pause=lambda: None, quit=lambda: None)
     except Exception as error:
-        log(f"No Tray Icon for the stopped notice: {error!r}")
+        log(f"No Tray Icon to carry a notice: {error!r}")
         return _NoTray()
+
+
+def _beep_once() -> None:
+    winsound.Beep(TONE_HZ, TONE_MS)
 
 
 def main() -> None:
     log = EventLog(LOG_PATH)
     report = Reporter(console=has_console(), log=log.write)
     threading.excepthook = log_thread_failure(log.write)
-    app = tray_icon = failure = None
+    app = tray_icon = lock = failure = None
     try:
+        # Two copies would type every Call twice, so a second launch stops here, before anything
+        # is hooked. The OS lets go of the lock when this process ends, however it ends.
+        lock = claim()
+        if lock is None:
+            if has_console():
+                print(f"{ALREADY_RUNNING_NOTICE}; this launch exits.")
+            refuse_second_launch(tray=_bare_tray_icon(log.write), beep=_beep_once, log=log.write)
+            return
         settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
         app = App(settings, log.write, warn=report.warning)
         with mss.MSS() as sct:
@@ -432,11 +455,13 @@ def main() -> None:
     finally:
         if app is not None:
             app.shutdown()  # every key goes back to the game before anything else
+        if lock is not None:
+            lock.release()  # so a relaunch is not refused while a stopped notice is still up
         if failure is None:
             if tray_icon is not None:
                 tray_icon.stop()
         else:
-            end_with_error(failure, log=log.write, tray=tray_icon or _icon_for_the_stopped_notice(log.write))
+            end_with_error(failure, log=log.write, tray=tray_icon or _bare_tray_icon(log.write))
         log.close()
     if failure is not None:
         raise failure
