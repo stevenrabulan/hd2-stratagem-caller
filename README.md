@@ -76,7 +76,7 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 
 - **A Trigger Key does nothing and the digit switches weapon.** The tool didn't see a callable Stratagem in the menu. Check the window title in `settings.toml` matches the game's exactly, that the Call Key matches your in-game bind, and that your screen is 3840×2160 (other sizes are untested).
 - **The menu opens but the Code isn't typed, or is typed wrong.** Check `[direction_keys]` matches your in-game binds. If only the first direction is lost on a Direct Key, raise `direct_key_pause_ms`. If directions are dropped generally, raise `keystroke_ms`.
-- **A Direct Key closes the menu instead of calling.** The menu was already open; Direct Keys always press the Call Key first and don't look at the screen.
+- **A Direct Key closes the menu instead of calling.** The menu was already open for more than the Arming Window (one second). Direct Keys skip the Call Key only inside the Arming Window; otherwise they press it first and don't look at the screen.
 - **Nothing is sent to the game at all.** The game may be ignoring synthetic keys from a non-elevated process; try running the terminal as administrator.
 - **Screenshots are 2560×1440 on a 4K monitor, or positions are off by a third.** The process is not DPI-aware. Run `tools\capture_fixtures.py --selftest`; it should print your monitor's true pixel size.
 - **Screenshots look washed out or too bright.** HDR. Note it and keep the shots; recognition is meant to rely on shape, not exact colour.

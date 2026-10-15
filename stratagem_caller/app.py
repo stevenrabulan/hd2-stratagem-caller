@@ -69,7 +69,16 @@ class App:
         for key, code in self.direct_keys.items():
             if key.matches(event):
                 self._swallowed.add(ident)
-                threading.Thread(target=self._direct_call, args=(code,), daemon=True).start()
+                with self._lock:
+                    # Inside the Arming Window the player has just opened the
+                    # Stratagem Menu, and pressing the Call Key would close it.
+                    menu_open = self._window is not None and self._window.is_open(
+                        time.monotonic()
+                    )
+                    self._window = None
+                threading.Thread(
+                    target=self._direct_call, args=(code, not menu_open), daemon=True
+                ).start()
                 return False
         for key, slot in self.trigger_keys.items():
             if key.matches(event):
@@ -129,11 +138,12 @@ class App:
                 finally:
                     self._sending.clear()
 
-    def _direct_call(self, code: str) -> None:
+    def _direct_call(self, code: str, press_call_key: bool) -> None:
         with self._send_lock:
             self._sending.set()
             try:
-                self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
+                if press_call_key:
+                    self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
                 self._tap_code(code)
             finally:
                 self._sending.clear()
