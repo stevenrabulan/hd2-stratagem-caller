@@ -30,9 +30,13 @@ def start_flash(flashes: dict[int, float], slot: int, now: float) -> dict[int, f
 
 def red_slots(flashes: dict[int, float], now: float) -> frozenset[int]:
     """The Slots whose Key Cap is in a red step at `now`; `flashes` maps Slot -> start time."""
-    return frozenset(
-        slot for slot, started in flashes.items() if (step := _step(started, now)) is not None and step % 2 == 0
-    )
+    return frozenset(slot for slot, started in flashes.items() if is_red(started, now))
+
+
+def is_red(started: float, now: float) -> bool:
+    """Whether a flash that began at `started` is in a red step at `now`."""
+    step = _step(started, now)
+    return step is not None and step % 2 == 0
 
 
 def tone_starts(started: float) -> tuple[float, ...]:

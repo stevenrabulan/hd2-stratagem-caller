@@ -36,9 +36,10 @@ from .startup import (  # noqa: E402
     refuse_second_launch,
     started_message,
 )
-from .terminal_code import CodeStatus, code_area, read_terminal_code  # noqa: E402
-from .terminal_prompt import prompt_area, read_terminal_prompt  # noqa: E402
-from .terminal_watch import READING_INTERVAL as TERMINAL_READING_INTERVAL, TerminalWatch  # noqa: E402
+from .terminal_code import CodeReading, CodeStatus, code_area, read_terminal_code  # noqa: E402
+from .terminal_prompt import TerminalPrompt, prompt_area, read_terminal_prompt  # noqa: E402
+from .terminal_watch import CODE_READING_INTERVAL, TerminalWatch  # noqa: E402
+from .terminal_watch import READING_INTERVAL as TERMINAL_READING_INTERVAL  # noqa: E402
 from .winkeys import Key  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -112,6 +113,7 @@ class App:
             enabled=self.settings.overlay_enabled,
             key_caps=self.router.key_caps,
             red_key_caps=self.router.red_key_caps,
+            terminal_key_cap=self.router.terminal_key_cap,
             monitor=monitor,
             stop=self._quit,
             on_failure=self._overlay_failed,
@@ -226,14 +228,33 @@ class App:
         """Read the Terminal Prompt until the Terminal watch ends: no prompt within 5 s of the
         Use Key press, the prompt gone for about a second, the game losing focus, the safety
         limit, or a pause (which drops the watch, so `terminal_is_current` turns false). Always
-        returns when the watch is over."""
+        returns when the watch is over.
+
+        While the prompt reads INTERACT it also reads the Code, every CODE_READING_INTERVAL, so the
+        Key Cap for the Terminal Key shows while a Code is read. It looks only between the tool's own
+        typing: a Code being typed is changing under it."""
         try:
             with mss.MSS() as sct:
                 monitor = sct.monitors[1]
                 area = prompt_area(monitor)
+                last_code_reading: float | None = None
+                reading_codes = self.settings.overlay_enabled  # nothing shows the Key Cap otherwise
                 while self.router.terminal_is_current(watch):
                     region = np.asarray(sct.grab(area))[:, :, :3]
-                    self.router.offer_terminal(watch, read_terminal_prompt(region, monitor["height"]))
+                    prompt = read_terminal_prompt(region, monitor["height"])
+                    self.router.offer_terminal(watch, prompt)
+                    now = time.monotonic()
+                    due = last_code_reading is None or now - last_code_reading >= CODE_READING_INTERVAL
+                    if reading_codes and due and prompt is TerminalPrompt.INTERACT and not self._entering_code.is_set():
+                        last_code_reading = now
+                        try:
+                            self.router.offer_terminal_code(watch, _read_code(sct, monitor))
+                        except Exception as error:  # Losing the Key Cap must not lose the Terminal Key.
+                            reading_codes = False
+                            self._log(
+                                f"Terminal watch: Code reading for the Key Cap failed, {error!r}; "
+                                "no Key Cap for the rest of this watch"
+                            )
                     time.sleep(TERMINAL_READING_INTERVAL)
         finally:
             # An error must not leave a watch with no worker (the Terminal Key would stay held
@@ -254,24 +275,28 @@ class App:
         started = time.perf_counter()
         try:
             with mss.MSS() as sct:
-                monitor = sct.monitors[1]
-                region = np.asarray(sct.grab(code_area(monitor)))[:, :, :3]
-            reading = read_terminal_code(region, monitor["height"])
+                reading = _read_code(sct, sct.monitors[1])
         except Exception as error:
             self._log(f"Terminal Key: reading the Code failed, {error!r}")
-            self._beep.play()
+            self._beep_for_code()
             raise
         took = f"read in {(time.perf_counter() - started) * 1000:.0f} ms"
         if reading.status is not CodeStatus.READ:
             what = "unreadable" if reading.status is CodeStatus.UNREADABLE else "not on screen"
             self._log(f"Terminal Key: Code {what}, {reading.why} ({took})")
-            self._beep.play()
+            self._beep_for_code()
         elif not reading.remaining:
             self._log(f"Terminal Key: Code {reading.code}, all {len(reading.code)} entered, nothing left to type ({took})")
         else:
             self._log(f"Terminal Key: Code {reading.code}, {reading.entered} entered, typing {reading.remaining} ({took})")
             with self._send_lock:
                 self._tap_code(reading.remaining, until_paused=True)
+
+    def _beep_for_code(self) -> None:
+        """The Terminal Key has no Code to enter: the Beep, and the Terminal Key's Key Cap flashes red
+        in step with its tones (as a Slot's does for a Trigger Key)."""
+        self.router.flash_terminal_key()
+        self._beep.play()
 
     def _act(self, outcome: Outcome, trigger: Key | None = None) -> None:
         """Carry out what a Trigger Key came to. Once paused nothing is typed or tapped
@@ -349,6 +374,12 @@ class App:
             self._tone(440 if self.router.paused else 880, 120)
             print("paused" if self.router.paused else "resumed")
         self.on_pause_change()
+
+
+def _read_code(sct, monitor: dict) -> CodeReading:
+    """One look at the middle of the screen for the Code a Terminal shows."""
+    region = np.asarray(sct.grab(code_area(monitor)))[:, :, :3]
+    return read_terminal_code(region, monitor["height"])
 
 
 def _menu_area(monitor: dict) -> dict:

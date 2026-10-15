@@ -76,18 +76,18 @@ A display the tool draws over the game, showing Key Caps and the Ready Heading.
 _Avoid_: HUD, window
 
 **Key Cap**:
-A drawing of a key in the Overlay, placed beside the thing that key acts on, such as a Trigger Key beside its Slot.
+A drawing of a key in the Overlay, placed beside the thing that key acts on, such as a Trigger Key beside its Slot, or the Terminal Key (followed by ENTER CODE) beside the Terminal Prompt while a Code is read.
 _Avoid_: Badge, label, key hint
 
 **Ready Heading**:
-The pulsing STRATAGEM CALLER READY text in the Overlay, just right of the game's STRATAGEMS header. It shows and hides at exactly the moments the Key Caps do.
+The pulsing STRATAGEM CALLER READY text in the Overlay, just right of the game's STRATAGEMS header. It shows and hides at exactly the moments the Slots' Key Caps do (not the Terminal Key's).
 _Avoid_: Banner, title
 
 **Beep**:
 The sound the tool makes when a Trigger Key cannot call its Slot (not callable, unreadable too long, or beyond the end of the menu): two short tones, each sounding with a red step of the Flash. Pressing the same Trigger Key again starts a new Beep in place of what is left of the old one.
 
 **Flash**:
-A Key Cap turning red twice in about 0.6 s when its Trigger Key earns a Beep, each red in step with one of the Beep's tones. A Slot with no Key Cap only beeps.
+A Key Cap turning red twice in about 0.6 s when its Trigger Key earns a Beep, each red in step with one of the Beep's tones. A Slot with no Key Cap only beeps. The Terminal Key's Key Cap flashes the same way when the Terminal Key beeps because no Code can be read; with no Key Cap up, it appears for each red step.
 _Avoid_: Blink, alert
 
 **Tray Icon**:

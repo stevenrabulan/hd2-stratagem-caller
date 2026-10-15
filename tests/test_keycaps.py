@@ -6,8 +6,17 @@ import pytest
 
 from stratagem_caller import reader
 from stratagem_caller.heading import PULSE_LOW, heading_box, render_heading
-from stratagem_caller.keycaps import column_box, render_icon, render_key_caps
+from stratagem_caller.keycaps import (
+    TerminalKeyCap,
+    column_box,
+    render_icon,
+    render_key_caps,
+    render_terminal_key_cap,
+    terminal_key_cap_box,
+)
 from stratagem_caller.reader import WHITE_THRESHOLD, read_menu
+from stratagem_caller.terminal_code import code_area, read_terminal_code
+from stratagem_caller.terminal_prompt import prompt_area, read_terminal_prompt
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "menu"
 ALL_SLOTS = {n: str(n % 10) for n in range(1, 11)}
@@ -221,3 +230,108 @@ def test_icon_arrow_points_up():
     assert rows[first + 4] < rows[widest - 4]  # a point at the top that widens into the head
     assert rows[widest + 8] < rows[widest] // 2  # then a narrow shaft
     assert rows[widest + 8] == rows[last - 4]  # which stays the same width to the bottom
+
+
+# --- the Key Cap for the Terminal Key, beside the Terminal Prompt ---
+
+TERMINAL_FIXTURES = sorted((Path(__file__).resolve().parent.parent / "fixtures" / "terminal").glob("*.png"))
+SCREEN = {"left": 0, "top": 0, "width": 3840, "height": 2160}
+
+
+def terminal_cap_pixels(frame, height):
+    """The screen pixels (x0, y0, x1, y1, end-exclusive) a Terminal Key Cap frame draws on."""
+    left, top, _, _ = terminal_key_cap_box(height)
+    ys, xs = np.nonzero(frame[:, :, 3])
+    return left + xs.min(), top + ys.min(), left + xs.max() + 1, top + ys.max() + 1
+
+
+def test_the_terminal_key_cap_fills_its_window_exactly():
+    for height in (2160, 1440, 1080):
+        _, _, width, box_height = terminal_key_cap_box(height)
+        assert render_terminal_key_cap(TerminalKeyCap("1"), height).shape == (box_height, width, 4)
+
+
+def test_the_terminal_key_cap_is_a_yellow_key_cap_with_a_dark_glyph_then_enter_code():
+    frame = render_terminal_key_cap(TerminalKeyCap("1"), 2160)
+    assert frame[:, :, 3].any()
+    assert (frame[:, :40] == YELLOW_BGRA).all(axis=2).sum() > 1000  # the cap's fill, on the left
+    cap_columns = np.nonzero((frame[:, :, :3] == YELLOW_BGRA[:3]).all(axis=2).any(axis=0))[0]
+    after_cap = frame[:, cap_columns.max() + 1 :]
+    assert after_cap[:, :, 3].any()  # the words follow the cap
+    assert not (after_cap[:, :, :3] == YELLOW_BGRA[:3]).all(axis=2).any()  # and are not yellow
+
+
+def test_the_terminal_key_cap_says_the_configured_key():
+    one = render_terminal_key_cap(TerminalKeyCap("1"), 2160)
+    assert not np.array_equal(one, render_terminal_key_cap(TerminalKeyCap("0"), 2160))
+    assert not np.array_equal(one, render_terminal_key_cap(TerminalKeyCap("enter"), 2160))
+    # A long name is abbreviated as on any Key Cap.
+    pgdn = render_terminal_key_cap(TerminalKeyCap("page down"), 2160)
+    assert np.array_equal(pgdn, render_terminal_key_cap(TerminalKeyCap("pgdn"), 2160))
+
+
+def test_a_red_terminal_key_cap_is_the_same_shape_with_a_red_fill():
+    normal = render_terminal_key_cap(TerminalKeyCap("1"), 2160)
+    red = render_terminal_key_cap(TerminalKeyCap("1", red=True), 2160)
+    assert np.array_equal(normal[:, :, 3], red[:, :, 3])
+    assert not np.array_equal(normal, red)
+    assert (red[:, :40] == RED_BGRA).all(axis=2).sum() == (normal[:, :40] == YELLOW_BGRA).all(axis=2).sum()
+    assert not (red[:, :40] == YELLOW_BGRA).all(axis=2).any()
+
+
+def test_the_terminal_key_cap_sits_right_of_the_terminal_prompt_at_the_same_height():
+    left, top, _, _ = terminal_key_cap_box(2160)
+    x0, y0, x1, y1 = terminal_cap_pixels(render_terminal_key_cap(TerminalKeyCap("1"), 2160), 2160)
+    prompt = prompt_area(SCREEN)
+    assert x0 >= prompt["left"] + prompt["width"]  # right of everything the Terminal Prompt reader looks at
+    assert abs((y0 + y1) / 2 - (prompt["top"] + prompt["height"] / 2)) < 20  # at the prompt's height
+    assert x0 < 2400  # and close to it
+
+
+@pytest.mark.parametrize("height", [2160, 1440, 1080])
+@pytest.mark.parametrize("red", [False, True])
+def test_the_terminal_key_cap_stays_off_every_pixel_either_reader_looks_at(height, red):
+    monitor = {"left": 0, "top": 0, "width": height * 16 // 9, "height": height}
+    x0, y0, x1, y1 = terminal_cap_pixels(render_terminal_key_cap(TerminalKeyCap("page down", red), height), height)
+    for area in (prompt_area(monitor), code_area(monitor)):
+        apart = x1 <= area["left"] or x0 >= area["left"] + area["width"]
+        apart = apart or y1 <= area["top"] or y0 >= area["top"] + area["height"]
+        assert apart, (area, (x0, y0, x1, y1))
+
+
+def test_the_terminal_key_cap_is_never_pure_white_and_scales_with_screen_height():
+    for height in (2160, 1440, 1080):
+        frame = render_terminal_key_cap(TerminalKeyCap("1", red=height == 1440), height)
+        assert frame[:, :, :3].min(axis=2).max() < WHITE_THRESHOLD
+    tall, small = terminal_key_cap_box(2160), terminal_key_cap_box(1080)
+    assert all(abs(a - 2 * b) <= 2 for i, (a, b) in enumerate(zip(tall, small)) if i != 2)
+    assert abs(tall[2] - 2 * small[2]) <= 0.06 * tall[2]  # the words' stroke rounds to whole pixels
+
+
+def terminal_screen(name):
+    crop = cv2.imread(str(Path(__file__).resolve().parent.parent / "fixtures" / "terminal" / f"{name}.png"))
+    screen = np.zeros((SCREEN["height"], SCREEN["width"], 3), np.uint8)
+    screen[400 : 400 + crop.shape[0], 1100 : 1100 + crop.shape[1]] = crop  # fixtures/terminal/README.md
+    return screen
+
+
+def reading_of(screen):
+    def grab(area):
+        return screen[area["top"] : area["top"] + area["height"], area["left"] : area["left"] + area["width"]]
+
+    return read_terminal_prompt(grab(prompt_area(SCREEN))), read_terminal_code(grab(code_area(SCREEN)))
+
+
+def test_there_are_terminal_fixtures_to_paint_on():
+    assert len(TERMINAL_FIXTURES) == 8
+
+
+@pytest.mark.parametrize("path", TERMINAL_FIXTURES, ids=lambda p: p.stem)
+def test_the_terminal_key_cap_painted_on_a_terminal_does_not_change_its_readings(path):
+    screen = terminal_screen(path.stem)
+    before = reading_of(screen)
+    left, top, _, _ = terminal_key_cap_box(2160)
+    for red in (False, True):
+        painted = paint(screen, render_terminal_key_cap(TerminalKeyCap("1", red), 2160), left, top)
+        assert not np.array_equal(painted, screen)
+        assert reading_of(painted) == before

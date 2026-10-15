@@ -11,7 +11,8 @@ from stratagem_caller import app as app_module
 from stratagem_caller import startup, terminal_watch, winkeys
 from stratagem_caller.app import ROOT, App
 from stratagem_caller.settings import load
-from stratagem_caller.terminal_code import code_area
+from stratagem_caller.keycaps import TerminalKeyCap
+from stratagem_caller.terminal_code import CodeReading, CodeStatus, code_area, read_terminal_code
 from stratagem_caller.terminal_prompt import TerminalPrompt, prompt_area
 
 
@@ -251,23 +252,258 @@ class FakeScreen:
         return np.concatenate([frame, np.full(frame.shape[:2] + (1,), 255, np.uint8)], axis=2)  # BGRA
 
 
-def test_the_terminal_watch_worker_reads_the_prompt_until_it_has_gone(monkeypatch):
+MONITOR = {"left": 0, "top": 0, "width": 3840, "height": 2160}
+NO_CODE = CodeReading(CodeStatus.NONE, why="no row of arrows")
+
+
+class LiveScreen:
+    """Stands in for mss for the Terminal watch worker: every grab shows what `shown.frame` is now."""
+
+    def __init__(self, shown, seen):
+        self.monitors = [None, MONITOR]
+        self._shown, self._seen = shown, seen
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def grab(self, area):
+        self._seen.append(area)
+        frame = grab(self._shown.frame, area)
+        return np.concatenate([frame, np.full(frame.shape[:2] + (1,), 255, np.uint8)], axis=2)  # BGRA
+
+
+def watch_in_thread(terminal):
+    """Run the Terminal watch worker on its own thread, as the app does."""
+    thread = threading.Thread(target=terminal.app._watch_terminal, args=(terminal.watch,), daemon=True)
+    thread.start()
+    return thread
+
+
+def wait_for(condition, seconds=5):
+    deadline = time.monotonic() + seconds
+    while not condition() and time.monotonic() < deadline:
+        time.sleep(0.005)
+    return condition()
+
+
+def quick_worker(monkeypatch, *, code_interval=0.01):
     monkeypatch.setattr(terminal_watch, "GONE_FOR", 0.05)
     monkeypatch.setattr(app_module, "TERMINAL_READING_INTERVAL", 0.01)
+    monkeypatch.setattr(app_module, "CODE_READING_INTERVAL", code_interval)
+
+
+def test_the_terminal_watch_worker_reads_the_prompt_until_it_has_gone(monkeypatch):
+    quick_worker(monkeypatch)
     terminal = Terminal(monkeypatch)
     areas, shown = [], []
-    interact = screen_with("drill_code_pending_angle_a")
-    empty = np.zeros_like(interact)
-    frames = [interact] * 3 + [empty] * 200  # the prompt shows, then goes
-    monkeypatch.setattr(app_module.mss, "MSS", lambda: FakeScreen(frames, areas))
+    screen = SimpleNamespace(frame=screen_with("drill_code_pending_angle_a"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, areas))
     # A router that tells what it was shown, to see the prompt was read while it showed.
     original = terminal.app.router.offer_terminal
-    terminal.app.router.offer_terminal = lambda w, p: (shown.append(p), original(w, p))
+
+    def offer(watch, prompt):
+        shown.append(prompt)
+        if len(shown) == 3:
+            screen.frame = np.zeros_like(screen.frame)  # the prompt goes
+        original(watch, prompt)
+
+    terminal.app.router.offer_terminal = offer
     terminal.app._watch_terminal(terminal.watch)  # returns when the watch is over
     assert not terminal.app.router.terminal_is_current(terminal.watch)
     assert shown[:3] == [TerminalPrompt.INTERACT] * 3 and shown[-1] is TerminalPrompt.NONE
-    assert all(area == prompt_area({"left": 0, "top": 0, "width": 3840, "height": 2160}) for area in areas)
+    assert set(map(str, areas)) == {str(prompt_area(MONITOR)), str(code_area(MONITOR))}
     assert any("Terminal watch ended: Terminal Prompt gone" in line for line in terminal.lines)
+
+
+# --- the Key Cap for the Terminal Key ---
+
+
+def test_the_overlay_is_given_the_terminal_key_cap(monkeypatch):
+    app, _ = make_app()
+    given = {}
+    monkeypatch.setattr(app_module.overlay, "start_overlay", lambda **kwargs: given.update(kwargs))
+    app.start_overlay(MONITOR)
+    assert given["terminal_key_cap"] == app.router.terminal_key_cap
+
+
+def test_the_worker_reads_the_code_while_the_prompt_reads_interact_and_the_key_cap_follows_the_screen(monkeypatch):
+    quick_worker(monkeypatch)
+    terminal = Terminal(monkeypatch)
+    screen = SimpleNamespace(frame=screen_with("drill_code_two_entered_angle_a"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    router = terminal.app.router
+    thread = watch_in_thread(terminal)
+    assert wait_for(lambda: router.terminal_key_cap() == TerminalKeyCap("1"))  # a Code is read: a Key Cap
+    screen.frame = screen_with("drill_code_complete_fading")  # all entered
+    assert wait_for(lambda: router.terminal_key_cap() is None)
+    screen.frame = screen_with("drill_code_pending_angle_a")  # a Code is wanted again
+    assert wait_for(lambda: router.terminal_key_cap() == TerminalKeyCap("1"))
+    screen.frame = screen_with("drill_next_step_not_a_code_grid_move_cursor")  # a grid: no Code, no INTERACT
+    assert wait_for(lambda: router.terminal_key_cap() is None)
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+    assert not thread.is_alive()
+    assert any("Terminal Key Cap shown: Code LURRDR, 2 entered" in line for line in terminal.lines)
+
+
+def test_an_unreadable_code_and_a_bar_show_no_key_cap(monkeypatch):
+    quick_worker(monkeypatch)
+    terminal = Terminal(monkeypatch)
+    reads = []
+    monkeypatch.setattr(
+        app_module, "read_terminal_code", lambda region, height: reads.append(1) or read_terminal_code(region, height)
+    )
+    screen = SimpleNamespace(frame=screen_with("drill_code_five_entered_hand_over_first_arrow"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    thread = watch_in_thread(terminal)
+    assert wait_for(lambda: len(reads) >= 3)  # kept reading, kept finding nothing it could trust
+    assert terminal.app.router.terminal_key_cap() is None
+    screen.frame = screen_with("drill_next_step_not_a_code_bar")
+    assert wait_for(lambda: len(reads) >= 6)
+    assert terminal.app.router.terminal_key_cap() is None
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+
+
+def test_the_code_is_read_only_while_the_prompt_reads_interact(monkeypatch):
+    quick_worker(monkeypatch)
+    terminal = Terminal(monkeypatch)
+    reads = []
+    monkeypatch.setattr(app_module, "read_terminal_code", lambda region, height: reads.append(1) or NO_CODE)
+    screen = SimpleNamespace(frame=screen_with("drill_next_step_not_a_code_grid_move_cursor"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    thread = watch_in_thread(terminal)
+    time.sleep(0.2)  # many prompt readings, all MOVE CURSOR
+    assert reads == []
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+    assert reads == []
+
+
+def test_the_code_is_read_at_most_four_times_a_second_not_at_the_prompts_rate(monkeypatch):
+    assert app_module.CODE_READING_INTERVAL == 0.25
+    quick_worker(monkeypatch, code_interval=0.2)
+    terminal = Terminal(monkeypatch)
+    reads, prompts = [], []
+    monkeypatch.setattr(app_module, "read_terminal_code", lambda region, height: reads.append(time.monotonic()) or NO_CODE)
+    original = terminal.app.router.offer_terminal
+    terminal.app.router.offer_terminal = lambda w, p: (prompts.append(p), original(w, p))
+    screen = SimpleNamespace(frame=screen_with("drill_code_pending_angle_a"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    thread = watch_in_thread(terminal)
+    time.sleep(0.5)
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+    assert len(prompts) > 10  # the prompt was read every 10 ms or so, the Code far less often
+    assert 2 <= len(reads) <= 4  # now, then every 0.2 s
+    assert all(later - earlier >= 0.15 for earlier, later in zip(reads, reads[1:]))
+
+
+def test_the_code_is_not_read_while_the_tool_is_typing_one(monkeypatch):
+    quick_worker(monkeypatch)
+    terminal = Terminal(monkeypatch)
+    reads = []
+    monkeypatch.setattr(app_module, "read_terminal_code", lambda region, height: reads.append(1) or NO_CODE)
+    screen = SimpleNamespace(frame=screen_with("drill_code_pending_angle_a"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    terminal.app._entering_code.set()
+    thread = watch_in_thread(terminal)
+    time.sleep(0.2)
+    assert reads == []
+    terminal.app._entering_code.clear()
+    assert wait_for(lambda: len(reads) >= 1)
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+
+
+def test_the_code_is_not_read_for_a_key_cap_when_the_overlay_is_off(monkeypatch):
+    quick_worker(monkeypatch)
+    terminal = Terminal(monkeypatch)
+    terminal.app.settings = dataclasses.replace(terminal.app.settings, overlay_enabled=False)
+    reads = []
+    monkeypatch.setattr(app_module, "read_terminal_code", lambda region, height: reads.append(1) or NO_CODE)
+    screen = SimpleNamespace(frame=screen_with("drill_code_pending_angle_a"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    thread = watch_in_thread(terminal)
+    time.sleep(0.2)
+    assert reads == []  # nothing would show it, so it is not worth a screen grab ten times a second
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+    assert not thread.is_alive()
+
+
+def test_a_code_reading_that_fails_costs_the_key_cap_not_the_terminal_watch(monkeypatch):
+    quick_worker(monkeypatch)
+    terminal = Terminal(monkeypatch)
+    monkeypatch.setattr(app_module, "read_terminal_code", lambda region, height: 1 / 0)
+    screen = SimpleNamespace(frame=screen_with("drill_code_pending_angle_a"))
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: LiveScreen(screen, []))
+    thread = watch_in_thread(terminal)
+    assert wait_for(lambda: any("Code reading for the Key Cap failed" in line for line in terminal.lines))
+    time.sleep(0.1)
+    assert terminal.app.router.terminal_is_current(terminal.watch)  # the prompt is still read, the Terminal Key still held
+    assert terminal.app.router.terminal_key_cap() is None
+    failures = [line for line in terminal.lines if "Code reading for the Key Cap failed" in line]
+    assert len(failures) == 1 and "ZeroDivisionError" in failures[0]  # said once, not ten times a second
+    screen.frame = np.zeros_like(screen.frame)
+    thread.join(5)
+    assert not thread.is_alive()
+
+
+# --- the Terminal Key's Key Cap flashes when the Terminal Key beeps ---
+
+
+class FlashSpy:
+    def __init__(self, terminal):
+        self.count = 0
+        terminal.app.router.flash_terminal_key = self._flash
+
+    def _flash(self):
+        self.count += 1
+
+
+@pytest.mark.parametrize(
+    "fixture", ["drill_code_five_entered_hand_over_first_arrow", "drill_next_step_not_a_code_bar"], ids=["unreadable", "none"]
+)
+def test_the_terminal_key_cap_flashes_when_the_terminal_key_beeps_for_want_of_a_code(monkeypatch, fixture):
+    terminal = Terminal(monkeypatch, screen_with(fixture))
+    spy = FlashSpy(terminal)
+    terminal.press_terminal_key()
+    terminal.wait_until_typed(tones=2)
+    assert terminal.tones == [330, 330] and spy.count == 1  # one flash for the one Beep
+
+
+def test_the_terminal_key_cap_flashes_when_reading_the_code_fails(monkeypatch):
+    terminal = Terminal(monkeypatch, screen_with("drill_code_pending_angle_a"))
+    spy = FlashSpy(terminal)
+    monkeypatch.setattr(app_module, "read_terminal_code", lambda region, height: 1 / 0)
+    terminal.app._entering_code.set()
+    with pytest.raises(ZeroDivisionError):
+        terminal.app._enter_code()
+    terminal.wait_until_typed(tones=2)
+    assert terminal.tones == [330, 330] and spy.count == 1
+
+
+@pytest.mark.parametrize("fixture", ["drill_code_two_entered_angle_a", "drill_code_complete_fading"])
+def test_the_terminal_key_cap_does_not_flash_when_a_code_was_read(monkeypatch, fixture):
+    terminal = Terminal(monkeypatch, screen_with(fixture))
+    spy = FlashSpy(terminal)
+    terminal.press_terminal_key()
+    terminal.wait_until_typed()
+    time.sleep(0.1)
+    assert terminal.tones == [] and spy.count == 0
+
+
+def test_the_terminal_key_cap_flash_is_red_for_real_after_a_beep(monkeypatch):
+    # Through the real router, with no spy: the Key Cap is red at the moment of the Beep.
+    terminal = Terminal(monkeypatch, screen_with("drill_next_step_not_a_code_bar"))
+    assert terminal.app.router.terminal_key_cap() is None
+    terminal.press_terminal_key()
+    terminal.wait_until_typed(tones=1)
+    assert terminal.app.router.terminal_key_cap() == TerminalKeyCap("1", red=True)
 
 
 # --- only one copy runs ---

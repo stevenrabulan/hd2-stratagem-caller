@@ -1,6 +1,6 @@
 import pytest
 
-from stratagem_caller.flash import red_slots, start_flash, tone_starts
+from stratagem_caller.flash import is_red, red_slots, start_flash, tone_starts
 
 
 def reds(start, times):
@@ -48,3 +48,9 @@ def test_starting_a_flash_restarts_that_slots_and_drops_flashes_that_are_over():
     flashes = {1: 10.0, 2: 10.5, 3: 9.0}
     assert start_flash(flashes, 2, 10.55) == {1: 10.0, 2: 10.55}  # Slot 3's flash ended long ago
     assert start_flash({}, 4, 1.0) == {4: 1.0}
+
+
+def test_a_flash_not_tied_to_a_slot_is_red_in_the_same_steps():
+    steps = [0.0, 0.14, 0.15, 0.3, 0.44, 0.45, 0.6, 5.0]
+    assert [is_red(10.0, 10.0 + t) for t in steps] == [True, True, False, True, True, False, False, False]
+    assert not is_red(10.0, 9.99)

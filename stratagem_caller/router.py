@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .arming import ArmingWindow, Kind, Outcome
-from .flash import red_slots, start_flash
+from .flash import is_red, red_slots, start_flash
+from .keycaps import TerminalKeyCap
 from .reader import Reading
+from .terminal_code import CodeReading, CodeStatus
 from .terminal_prompt import TerminalPrompt
 from .terminal_watch import TerminalWatch
 
@@ -82,6 +84,7 @@ class KeyRouter:
         self._reading: Reading | None = None
         self._terminal: TerminalWatch | None = None  # the watch for a Terminal's prompt
         self._flashes: dict[int, float] = {}  # Slot -> when its Trigger Key last beeped
+        self._terminal_flash: float | None = None  # when the Terminal Key last beeped
         self._held: dict[Ident, float] = {}  # key -> time of its latest key-down
         self._swallowed: set[Ident] = set()
 
@@ -182,6 +185,8 @@ class KeyRouter:
             why = "Stratagem Menu watched, Trigger Key rules apply"
         else:
             self._swallowed.add(ident)
+            with self._lock:
+                watch.code = None  # the Code is about to change under the tool's own typing
             self._log(f"terminal key {self.terminal_key.name}: swallowed, {_describe_prompt(prompt)}")
             return Decision(False, enter_code=True)
         self._log(f"terminal key {self.terminal_key.name}: not swallowed, {why}")
@@ -288,6 +293,33 @@ class KeyRouter:
         with self._lock:
             return red_slots(self._flashes, self._clock()) & shown.keys()
 
+    def terminal_key_cap(self) -> TerminalKeyCap | None:
+        """The Key Cap for the Terminal Key to show now, None for none. It shows while a Terminal's
+        Code is read with directions left to enter and the Terminal Key would enter it: the prompt
+        reads INTERACT, the Stratagem Menu is not being watched (there the key is a Trigger Key),
+        the tool is not typing, the game is focused and the tool is not paused. During a flash it
+        shows red in each red step, whether or not a Code is read: that is how the player is told
+        the Terminal Key beeped for want of a Code."""
+        # Asked of Windows outside the lock, as key_caps does.
+        if self.paused or self._foreground_title() != self.window_title:
+            return None
+        with self._lock:
+            watch, window = self._terminal, self._window
+            if watch is None or watch.prompt is not TerminalPrompt.INTERACT:
+                return None
+            if window is not None and not window.done:
+                return None
+            red = self._terminal_flash is not None and is_red(self._terminal_flash, self._clock())
+            waiting = _code_waits(watch.code)
+        if red or (waiting and not self._is_entering_code()):
+            return TerminalKeyCap(self.terminal_key.name, red)
+        return None
+
+    def flash_terminal_key(self) -> None:
+        """The Terminal Key just beeped: its Key Cap flashes red, in step with the Beep's tones."""
+        with self._lock:
+            self._terminal_flash = self._clock()
+
     # --- the worker thread's view of the Arming Window ---
 
     def offer(self, window: ArmingWindow, reading: Reading) -> Outcome | None:
@@ -353,14 +385,32 @@ class KeyRouter:
         with self._lock:
             if self._terminal is not watch:
                 return
+            had_cap = _code_waits(watch.code)
             if self._foreground_title() != self.window_title:
                 reason = "game window lost focus"
             else:
                 reason = watch.offer(prompt, self._clock())
-            if reason is None:
+            if reason is not None:
+                self._terminal = None
+            lost_cap = had_cap and not _code_waits(watch.code)
+        if lost_cap:
+            self._log(f"Terminal Key Cap hidden: {_describe_prompt(prompt)}")
+        if reason is not None:
+            self._log(f"Terminal watch ended: {reason}")
+
+    def offer_terminal_code(self, watch: TerminalWatch, reading: CodeReading) -> None:
+        """Feed a reading of the Code to `watch`. Ignored if `watch` was replaced, or while the tool
+        is typing a Code (a reading taken just before the press, or amid the typing, is out of date)."""
+        with self._lock:
+            if self._terminal is not watch or self._is_entering_code():
                 return
-            self._terminal = None
-        self._log(f"Terminal watch ended: {reason}")
+            before = _code_waits(watch.code)
+            watch.offer_code(reading)
+            after = _code_waits(watch.code)
+        if after and not before:
+            self._log(f"Terminal Key Cap shown: Code {reading.code}, {reading.entered} entered")
+        elif before and not after:
+            self._log(f"Terminal Key Cap hidden: {_describe_code(reading)}")
 
     def terminal_is_current(self, watch: TerminalWatch) -> bool:
         with self._lock:
@@ -380,6 +430,17 @@ class KeyRouter:
         with self._lock:
             self._window = None
 
+
+
+def _code_waits(reading: CodeReading | None) -> bool:
+    """Whether `reading` is a Code read in full with directions still to enter."""
+    return reading is not None and reading.status is CodeStatus.READ and bool(reading.remaining)
+
+
+def _describe_code(reading: CodeReading) -> str:
+    if reading.status is CodeStatus.READ:
+        return f"Code {reading.code}, all entered"
+    return f"{reading.status.value}, {reading.why}"
 
 
 def _describe_prompt(prompt: TerminalPrompt) -> str:

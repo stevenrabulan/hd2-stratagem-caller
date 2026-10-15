@@ -1,3 +1,6 @@
+import pytest
+
+from stratagem_caller.terminal_code import CodeReading, CodeStatus
 from stratagem_caller.terminal_prompt import TerminalPrompt
 from stratagem_caller.terminal_watch import GIVE_UP_AFTER, GONE_FOR, SAFETY_LIMIT, TerminalWatch
 
@@ -114,3 +117,37 @@ def test_the_latest_reading_is_the_prompt():
 def test_gone_for_is_about_a_second():
     assert 0.8 <= GONE_FOR <= 1.2
     assert GIVE_UP_AFTER == 5.0
+
+
+# --- the Code read while the prompt reads INTERACT ---
+
+CODE = CodeReading(CodeStatus.READ, "LURRDR", 2, why="6 arrows")
+
+
+def test_a_code_reading_is_kept_while_the_prompt_reads_interact():
+    watch = TerminalWatch(started=0.0)
+    assert watch.code is None
+    watch.offer(INTERACT, 1.0)
+    watch.offer_code(CODE)
+    assert watch.code is CODE
+    watch.offer(INTERACT, 1.1)
+    assert watch.code is CODE  # the next reading of the prompt does not forget it
+
+
+@pytest.mark.parametrize("prompt", [NONE, MOVE])
+def test_the_code_goes_when_the_prompt_stops_reading_interact(prompt):
+    watch = TerminalWatch(started=0.0)
+    watch.offer(INTERACT, 1.0)
+    watch.offer_code(CODE)
+    watch.offer(prompt, 1.1)
+    assert watch.code is None
+    watch.offer(INTERACT, 1.2)
+    assert watch.code is None  # the next step's Code has to be read afresh
+
+
+@pytest.mark.parametrize("prompt", [NONE, MOVE])
+def test_a_code_reading_that_arrives_after_the_prompt_changed_is_dropped(prompt):
+    watch = TerminalWatch(started=0.0)
+    watch.offer(prompt, 1.0)
+    watch.offer_code(CODE)
+    assert watch.code is None
