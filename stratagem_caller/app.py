@@ -25,6 +25,7 @@ from . import tray  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
+from .startup import Reporter, describe_startup, end_with_error, has_console, log_thread_failure, started_message  # noqa: E402
 from .terminal_prompt import prompt_area, read_terminal_prompt  # noqa: E402
 from .terminal_watch import READING_INTERVAL as TERMINAL_READING_INTERVAL, TerminalWatch  # noqa: E402
 from .winkeys import Key  # noqa: E402
@@ -40,17 +41,24 @@ RECENT_REGIONS = 16
 FIRST_READING_DELAY = 0.15
 
 
+def _print_warning(text: str) -> None:
+    print(f"  Warning: {text}")
+
+
 class App:
     def __init__(
         self,
         settings: Settings,
         log: Callable[[str], None] = lambda text: None,
         tone: Callable[[int, int], None] = winsound.Beep,
+        warn: Callable[[str], None] = _print_warning,
     ):
-        """`tone(hz, ms)` sounds one tone and returns when it ends."""
+        """`tone(hz, ms)` sounds one tone and returns when it ends. `warn` hears of a problem
+        the tool carries on through (the Overlay stopping)."""
         self.settings = settings
         self._log = log
         self._tone = tone
+        self._warn = warn
         self.recent = RecentRegions(RECENT_REGIONS)
         self._marks = 0
         self._quit = threading.Event()  # ends the Overlay's thread and the tool's main loop
@@ -97,8 +105,7 @@ class App:
         )
 
     def _overlay_failed(self, error: Exception) -> None:
-        self._log(f"Overlay stopped: {error!r}")
-        print(f"  Warning: the Overlay stopped ({error!r}); Trigger Keys still work.")
+        self._warn(f"the Overlay stopped ({error!r}); Trigger Keys still work.")
 
     def stop(self) -> None:
         """Ask the tool to end: the Overlay closes and the main loop returns. Called for
@@ -320,47 +327,69 @@ def _open_log(log: Callable[[str], None]) -> None:
         print(f"  Warning: could not open {LOG_PATH}: {error}")
 
 
-def _start_tray(app: App, log: Callable[[str], None]) -> tray.TrayIcon | None:
+class _NoTray:
+    """Stands in when no Tray Icon could be shown."""
+
+    def notify(self, message: str) -> None:
+        raise RuntimeError("there is no Tray Icon to show it")
+
+    def stop(self) -> None:
+        pass
+
+
+def _make_tray(
+    log: Callable[[str], None], *, paused: Callable[[], bool], toggle_pause: Callable[[], None], quit: Callable[[], None]
+) -> tray.TrayIcon:
+    running = tray.load_icon()
+    icon = tray.TrayIcon(
+        paused=paused,
+        toggle_pause=toggle_pause,
+        open_log=lambda: _open_log(log),
+        quit=quit,
+        running_image=running,
+        paused_image=tray.greyed(running),
+    )
+    icon.start()
+    return icon
+
+
+def _start_tray(app: App, log: Callable[[str], None], report: Reporter) -> tray.TrayIcon | None:
     """Show the Tray Icon, or say why not: losing it must not lose the keyboard."""
     try:
-        running = tray.load_icon()
-        icon = tray.TrayIcon(
-            paused=lambda: app.router.paused,
-            toggle_pause=app.toggle_pause,
-            open_log=lambda: _open_log(log),
-            quit=app.stop,
-            running_image=running,
-            paused_image=tray.greyed(running),
-        )
-        icon.start()
+        icon = _make_tray(log, paused=lambda: app.router.paused, toggle_pause=app.toggle_pause, quit=app.stop)
     except Exception as error:
-        log(f"Tray Icon failed to start: {error!r}")
-        print(f"  Warning: the Tray Icon failed to start ({error!r}); Ctrl+C here still quits.")
+        report.warning(f"the Tray Icon failed to start ({error!r}); only Ctrl+C in a terminal quits the tool.", notify=False)
         return None
     app.on_pause_change = icon.refresh
     return icon
 
 
-def main() -> None:
-    settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
-    log = EventLog(LOG_PATH)
-    app = App(settings, log.write)
-    with mss.MSS() as sct:
-        monitor = dict(sct.monitors[1])
-    height = monitor["height"]
-    print(f"Stratagem Caller running. Screen height {height}.")
-    if height != REFERENCE_HEIGHT:
-        print(f"  Warning: only tested at {REFERENCE_HEIGHT}; Trigger Keys may not read the menu.")
-    print(f"  Call Key [{settings.call_key}] then {', '.join(settings.trigger_keys)} for Slots")
-    print(f"  Use Key [{settings.use_key}] at a Terminal, then Terminal Key [{settings.terminal_key}] (beeps for now: the Code is not read yet)")
-    for key, code in settings.direct_keys.items():
-        print(f"  Direct Key [{key}] -> {code}")
-    print(f"  [{settings.pause_key}] pause/resume, [{settings.mark_key}] mark something unexpected, Ctrl+C here to quit")
-    print(f"  Logging Trigger Keys and Calls to {LOG_PATH}")
-    print(f"  Overlay (Key Caps beside each Slot and a ready heading while the menu is open): {'on' if settings.overlay_enabled else 'off'}")
-    app.start_overlay(monitor)
-    tray_icon = _start_tray(app, log.write)
+def _icon_for_the_stopped_notice(log: Callable[[str], None]):
+    """The error came before the Tray Icon was shown (for example a settings.toml mistake). Show a
+    bare one, with nothing in its menu doing anything, just to carry the stopped notice."""
     try:
+        return _make_tray(log, paused=lambda: False, toggle_pause=lambda: None, quit=lambda: None)
+    except Exception as error:
+        log(f"No Tray Icon for the stopped notice: {error!r}")
+        return _NoTray()
+
+
+def main() -> None:
+    log = EventLog(LOG_PATH)
+    report = Reporter(console=has_console(), log=log.write)
+    threading.excepthook = log_thread_failure(log.write)
+    app = tray_icon = failure = None
+    try:
+        settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
+        app = App(settings, log.write, warn=report.warning)
+        with mss.MSS() as sct:
+            monitor = dict(sct.monitors[1])
+        tray_icon = _start_tray(app, log.write, report)
+        warnings = describe_startup(report, settings, monitor["height"], LOG_PATH)
+        if tray_icon is not None:
+            report.notify = tray_icon.notify
+            report.notify_safely(started_message(settings, warnings))
+        app.start_overlay(monitor)
         keyboard.hook(app.on_event, suppress=True)
         keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
         keyboard.add_hotkey(settings.mark_key, app.mark)
@@ -369,8 +398,16 @@ def main() -> None:
             time.sleep(0.2)
     except KeyboardInterrupt:
         pass
+    except Exception as error:
+        failure = error
     finally:
-        if tray_icon is not None:
-            tray_icon.stop()
-        app.shutdown()
+        if app is not None:
+            app.shutdown()  # every key goes back to the game before anything else
+        if failure is None:
+            if tray_icon is not None:
+                tray_icon.stop()
+        else:
+            end_with_error(failure, log=log.write, tray=tray_icon or _icon_for_the_stopped_notice(log.write))
         log.close()
+    if failure is not None:
+        raise failure

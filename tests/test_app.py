@@ -34,6 +34,16 @@ def test_stop_is_how_quit_from_the_tray_ends_the_tool():
     assert app.quit_requested
 
 
+def test_an_overlay_that_fails_to_start_is_a_warning_and_the_tool_carries_on(monkeypatch):
+    warnings = []
+    settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
+    app = App(settings, tone=lambda hz, ms: None, warn=warnings.append)
+    monkeypatch.setattr(app_module.overlay, "start_overlay", lambda **kwargs: kwargs["on_failure"](RuntimeError("no window")))
+    app.start_overlay({"left": 0, "top": 0, "width": 3840, "height": 2160})
+    assert len(warnings) == 1 and "Overlay" in warnings[0] and "no window" in warnings[0]
+    assert not app.quit_requested
+
+
 # --- the Terminal watch and the Terminal Key ---
 
 

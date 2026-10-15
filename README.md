@@ -13,7 +13,25 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 
 ## Running
 
-Start it before or during a mission, and leave the terminal open (or use the Tray Icon's Quit to end it):
+### From the desktop shortcut
+
+Make the shortcut once (and again after moving the repo or rebuilding the virtual environment; it replaces an existing or broken one):
+
+```bash
+.venv\Scripts\python.exe tools\make_shortcut.py
+```
+
+Then double-click **Stratagem Caller** on the desktop. It opens no terminal window: it runs this repo's `.venv\Scripts\pythonw.exe -m stratagem_caller` from the repo root, so it always runs the current code (nothing is packaged or rebuilt). It runs without administrator rights, so there is no UAC prompt. `tools\make_shortcut.py --dry-run` says what it would make without making it; `--path FILE.lnk` makes the shortcut somewhere else.
+
+- A notification says **Running. Call Key: B** (your Call Key). Startup warnings, such as an untested screen height or the Overlay failing to start, appear as notifications too.
+- With no terminal, the other startup lines (Direct Keys, log path, Overlay on or off) and every warning go to `logs/stratagem_caller.log`, along with the full details of anything that goes wrong.
+- If an unexpected error ends the tool, the full traceback is written to the log, a **Stratagem Caller stopped: see log** notification appears, and the Tray Icon goes away. Keys go back to the game first.
+- **If the game ignores the tool's keys**, the game is probably running as administrator and ignoring keys from a non-elevated program. Right-click the shortcut, choose Properties, then Advanced, and tick **Run as administrator**.
+- To quit, use the Tray Icon's **Quit** (below).
+
+### From a terminal
+
+Prints its startup text in the terminal as before and shows the same Tray Icon; leave the terminal open (or use the Tray Icon's Quit to end it):
 
 ```bash
 .venv\Scripts\python.exe -m stratagem_caller
@@ -96,8 +114,8 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 - **At a Terminal, `1` beeps and does nothing else.** That is the Terminal Key at work: the Terminal Prompt reads `INTERACT`, and the Code is not read or entered yet. To get the weapon switch back, set `terminal_key` in `settings.toml` to a key you do not use. If `1` still switches weapon at a Terminal, check the log for `Terminal watch started` after the Use Key press, and that the screen is 3840×2160 (the prompt is read from fixed positions, tried at that size only).
 - **The menu opens but the Code isn't typed, or is typed wrong.** Check `[direction_keys]` matches your in-game binds. If only the first direction is lost on a Direct Key, raise `direct_key_pause_ms`. If directions are dropped generally, raise `keystroke_ms`.
 - **A Direct Key closes the menu instead of calling.** The menu was open but the tool wasn't watching it (it was paused, the game had lost focus, or the watch hit its 60 s safety limit). Direct Keys skip the Call Key only while the tool is watching a menu you opened with the Call Key; otherwise they press it first and don't look at the screen.
-- **No Key Caps or heading appear next to the menu.** Check `[overlay] enabled` is `true` in `settings.toml`, that the startup text says the Overlay is `on`, and that the game is in borderless fullscreen (the Overlay has only been tried over borderless fullscreen). A Key Cap only appears once the tool has seen the menu open; if Trigger Keys do nothing either, see the first item. A warning in the terminal and a line in `logs/stratagem_caller.log` say if the Overlay failed to start.
-- **Nothing is sent to the game at all.** The game may be ignoring synthetic keys from a non-elevated process; try running the terminal as administrator.
+- **No Key Caps or heading appear next to the menu.** Check `[overlay] enabled` is `true` in `settings.toml`, that the startup text says the Overlay is `on`, and that the game is in borderless fullscreen (the Overlay has only been tried over borderless fullscreen). A Key Cap only appears once the tool has seen the menu open; if Trigger Keys do nothing either, see the first item. A warning (a notification, and the terminal if there is one) and a line in `logs/stratagem_caller.log` say if the Overlay failed to start.
+- **Nothing is sent to the game at all.** The game may be ignoring synthetic keys from a non-elevated process; try running the terminal as administrator (or, from the desktop shortcut, tick "Run as administrator" on it).
 - **Screenshots are 2560×1440 on a 4K monitor, or positions are off by a third.** The process is not DPI-aware. Run `tools\capture_fixtures.py --selftest`; it should print your monitor's true pixel size.
 - **Screenshots look washed out or too bright.** HDR. Note it and keep the shots; recognition is meant to rely on shape, not exact colour.
 - **Screenshots are black, or show the desktop instead of the game.** The game is in exclusive fullscreen. Switch to borderless.

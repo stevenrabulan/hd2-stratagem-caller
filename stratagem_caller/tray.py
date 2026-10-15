@@ -3,10 +3,12 @@
 It shows the Key Cap (greyed while paused), says Running or Paused in its tooltip, and has a
 menu that pauses or resumes, opens the log, and quits. It decides nothing itself: what a menu
 item does is handed in, and the pause state is asked for, so the hotkey and the menu share one
-pause toggle and the icon follows either (the toggle calls `refresh`). pystray is reached
+pause toggle and the icon follows either (the toggle calls `refresh`). It also shows Windows
+notifications, which only work once the icon is in the notification area. pystray is reached
 through a backend the caller may replace, so tests never put a real icon on the screen.
 """
 
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,6 +19,8 @@ NAME = "Stratagem Caller"
 TRAY_SIZE = 64
 # How bright a greyed icon is, against the grey of the same picture: dimmer reads as "off".
 GREY_LEVEL = 0.6
+# How long a notification waits for the icon to appear in the notification area (normally a few ms).
+SHOWN_WITHIN = 3.0
 
 
 def load_icon(path: Path = ICON_PATH, size: int = TRAY_SIZE) -> Image.Image:
@@ -63,12 +67,22 @@ class TrayIcon:
         self._paused_image = paused_image
         self._backend = backend if backend is not None else _real_backend()
         self._icon = None
+        self._shown = threading.Event()
 
     def start(self) -> None:
         """Put the icon in the notification area; its loop runs on its own thread."""
         assert self._icon is None, "the Tray Icon is already started"
         self._icon = self._backend.Icon(NAME, icon=self._image(), title=self._title(), menu=self._menu())
-        self._icon.run_detached()
+        self._icon.run_detached(self._show)
+
+    def notify(self, message: str, shown_within: float = SHOWN_WITHIN) -> None:
+        """Show a Windows notification. Waits for the icon to appear first, since pystray cannot
+        notify from an icon that is not shown yet. Raises if it never appears."""
+        icon = self._icon
+        assert icon is not None, f"the Tray Icon is not started, so it cannot show: {message!r}"
+        if not self._shown.wait(shown_within):
+            raise RuntimeError(f"the Tray Icon did not appear within {shown_within} s, so it cannot show: {message!r}")
+        icon.notify(message, NAME)
 
     def refresh(self) -> None:
         """Bring the picture, the tooltip and the menu label in line with the pause state."""
@@ -84,6 +98,11 @@ class TrayIcon:
         icon, self._icon = self._icon, None
         if icon is not None:
             icon.stop()
+
+    def _show(self, icon) -> None:
+        """Runs on the icon's own thread once its loop has started."""
+        icon.visible = True
+        self._shown.set()
 
     def _image(self) -> Image.Image:
         return self._paused_image if self._paused() else self._running_image

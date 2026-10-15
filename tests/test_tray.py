@@ -1,6 +1,8 @@
+import threading
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from stratagem_caller.tray import ICON_PATH, TrayIcon, greyed, load_icon
@@ -12,9 +14,21 @@ class FakeIcon:
     def __init__(self, name, icon, title, menu):
         self.name, self.icon, self.title, self.menu = name, icon, title, menu
         self.calls = []
+        self.visible = False
+        self.notices = []
+        self.setup = None
 
-    def run_detached(self):
+    def run_detached(self, setup=None):
         self.calls.append("run_detached")
+        self.setup = setup
+
+    def show(self):
+        """The icon's own thread getting as far as running the setup it was given."""
+        self.setup(self)
+
+    def notify(self, message, title=None):
+        assert self.visible, "pystray cannot notify from an icon that is not shown yet"
+        self.notices.append((message, title))
 
     def update_menu(self):
         self.calls.append("update_menu")
@@ -72,6 +86,35 @@ def test_it_shows_the_key_cap_with_a_tooltip_saying_running():
     assert tool.icon.icon is tool.running
     assert "Running" in tool.icon.title and "Paused" not in tool.icon.title
     assert "run_detached" in tool.icon.calls
+
+
+def test_notify_shows_a_notification_once_the_icon_is_in_the_notification_area():
+    tool = Tool()
+    tool.tray.start()
+    tool.icon.show()
+    tool.tray.notify("Running. Call Key: B")
+    assert tool.icon.notices == [("Running. Call Key: B", "Stratagem Caller")]
+
+
+def test_notify_waits_for_the_icon_to_be_shown_rather_than_failing_in_its_first_moments():
+    tool = Tool()
+    tool.tray.start()
+    threading.Timer(0.05, tool.icon.show).start()  # the icon's thread is a moment slow
+    tool.tray.notify("Running. Call Key: B")
+    assert [message for message, _ in tool.icon.notices] == ["Running. Call Key: B"]
+
+
+def test_notify_says_what_it_could_not_show_when_the_icon_never_appears():
+    tool = Tool()
+    tool.tray.start()
+    with pytest.raises(RuntimeError, match="Stratagem Caller stopped: see log"):
+        tool.tray.notify("Stratagem Caller stopped: see log", shown_within=0.05)
+
+
+def test_notify_before_start_is_refused_loudly():
+    tool = Tool()
+    with pytest.raises(AssertionError, match="not started"):
+        tool.tray.notify("too early")
 
 
 def test_the_menu_offers_pause_open_log_and_quit_in_that_order():
