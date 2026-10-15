@@ -4,11 +4,11 @@ A companion tool for Helldivers 2. It reads the Stratagem Menu off the screen an
 
 - **Trigger Keys**: press your Call Key, then a digit while the menu is open, to call the Stratagem in that Slot (1 = top of the menu). Codes are read from the screen, so new or temporary Stratagems work without an update.
 - **Direct Keys**: one key calls one specific Stratagem (for example PageDown for Reinforce), using a Code you configure by name from [codebook.toml](codebook.toml) or write out yourself.
-- **Overlay**: while the tool is ready to act on Trigger Keys (it has seen the menu open), a yellow Key Cap showing each Slot's Trigger Key sits left of that Slot's Icon, in the look of the game's own key hints. Slots on cooldown get one too. The Key Caps hide when a Call starts, when you close the menu with the Call Key, when the game loses focus, when you pause, and when the menu closes. Turn it off with `enabled = false` under `[overlay]` in [settings.toml](settings.toml); Trigger Keys work the same either way.
+- **Overlay**: while the tool is ready to act on Trigger Keys (it has seen the menu open), a yellow Key Cap showing each Slot's Trigger Key sits left of that Slot's Icon, in the look of the game's own key hints. Slots on cooldown get one too. When a Trigger Key beeps, that Slot's Key Cap flashes red three times in about 0.6 s (the beep sound is the same; a Slot beyond the end of the menu has no Key Cap, so it only beeps). The Key Caps hide when a Call starts, when you close the menu with the Call Key, when the game loses focus, when you pause, and when the menu closes. Turn it off with `enabled = false` under `[overlay]` in [settings.toml](settings.toml); Trigger Keys work the same either way.
 
 Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/adr](docs/adr).
 
-**Status:** Trigger Keys and Direct Keys are built. The screen reader is tested against 4K fixtures; sending keys into the game has not been confirmed in a mission yet. The Overlay (Key Caps) is built and tested on its drawing and show/hide rules, but has not been confirmed in-game yet.
+**Status:** Trigger Keys and Direct Keys are built. The screen reader is tested against 4K fixtures; sending keys into the game has not been confirmed in a mission yet. The Overlay (Key Caps, and their red flash on a beep) is built and tested on its drawing, show/hide rules and flash timing, but has not been confirmed in-game yet.
 
 ## Running
 

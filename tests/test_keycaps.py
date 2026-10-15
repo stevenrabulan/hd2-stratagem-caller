@@ -11,6 +11,7 @@ from stratagem_caller.reader import WHITE_THRESHOLD, read_menu
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "menu"
 ALL_SLOTS = {n: str(n % 10) for n in range(1, 11)}
 YELLOW_BGRA = (0, 233, 255, 255)  # #FFE900, the game's yellow
+RED_BGRA = (40, 40, 215, 255)
 
 
 def slot_rows(slot, s=1.0):
@@ -44,6 +45,32 @@ def test_key_cap_is_the_games_yellow_with_a_dark_glyph():
     assert dark.sum() > 30  # the glyph
 
 
+def fill_at(frame, slot):
+    """The colour of a Slot's Key Cap fill, sampled inside it and off the glyph."""
+    left, _, _, _ = column_box(2160)
+    rows = slot_rows(slot)
+    middle = (rows.start + rows.stop) // 2
+    return tuple(frame[middle - 20, 46 + 8 - left])
+
+
+def test_a_red_key_cap_has_a_red_fill_and_the_others_stay_yellow():
+    frame = render_key_caps({1: "1", 2: "2", 3: "3"}, 2160, red=frozenset({2}))
+    assert [fill_at(frame, n) for n in (1, 2, 3)] == [YELLOW_BGRA, RED_BGRA, YELLOW_BGRA]
+
+
+def test_a_red_key_cap_is_drawn_where_the_normal_one_is():
+    normal = render_key_caps({2: "2"}, 2160)
+    red = render_key_caps({2: "2"}, 2160, red=frozenset({2}))
+    assert not np.array_equal(normal, red)
+    assert np.array_equal(normal[:, :, 3], red[:, :, 3])  # same shape, only the colour changes
+
+
+def test_a_red_slot_with_no_key_cap_draws_nothing():
+    assert not render_key_caps({}, 2160, red=frozenset({4}))[:, :, 3].any()
+    frame = render_key_caps({1: "1"}, 2160, red=frozenset({4}))
+    assert [n for n in range(1, 11) if drawn(frame, slot_rows(n))] == [1]
+
+
 def test_key_cap_shows_the_given_name():
     one = render_key_caps({1: "1"}, 2160)
     zero = render_key_caps({1: "0"}, 2160)
@@ -62,7 +89,7 @@ def test_key_cap_is_centred_on_its_icon_and_left_of_it():
 
 
 def test_no_pixel_is_pure_white():
-    frame = render_key_caps(ALL_SLOTS, 2160)
+    frame = render_key_caps(ALL_SLOTS, 2160, red=frozenset({2, 5}))
     assert frame[:, :, :3].min(axis=2).max() < WHITE_THRESHOLD
 
 
@@ -129,7 +156,9 @@ def test_key_caps_painted_on_a_menu_do_not_change_its_reading(path):
     before = read_menu(region)
     left, top, _, _ = column_box(2160)
     listed = {n: str(n % 10) for n in before.icons}
-    for names in (listed, ALL_SLOTS):  # what the Overlay would show, and every Slot at once
-        painted = paint(region, render_key_caps(names, 2160), left, top)
-        assert names is listed or not np.array_equal(painted, region)
-        assert same_reading(before, read_menu(painted))
+    # What the Overlay would show, and every Slot at once; normal, one mid-flash, and all red.
+    for names in (listed, ALL_SLOTS):
+        for red in (frozenset(), frozenset(list(names)[:1]), frozenset(names)):
+            painted = paint(region, render_key_caps(names, 2160, red=red), left, top)
+            assert names is listed or not np.array_equal(painted, region)
+            assert same_reading(before, read_menu(painted))

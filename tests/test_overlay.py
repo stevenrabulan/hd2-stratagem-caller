@@ -2,6 +2,7 @@ import threading
 
 import numpy as np
 
+from stratagem_caller.flash import red_slots
 from stratagem_caller.keycaps import column_box, render_key_caps
 from stratagem_caller.overlay import Overlay, start_overlay
 
@@ -32,17 +33,20 @@ class Screen:
 
     def __init__(self, height=2160):
         self.names = {}
+        self.red = frozenset()
         self.window = None
-        self.overlay = Overlay(lambda: self.names, height, self._make_window)
+        self.overlay = Overlay(lambda: self.names, lambda: self.red, height, self._make_window)
         self.height = height
 
     def _make_window(self, box):
         self.window = FakeWindow(box)
         return self.window
 
-    def tick(self, names=None):
+    def tick(self, names=None, red=None):
         if names is not None:
             self.names = names
+        if red is not None:
+            self.red = frozenset(red)
         self.overlay.tick()
         return [kind for kind, _ in self.window.events]
 
@@ -98,6 +102,63 @@ def test_key_caps_are_hidden_when_none_are_wanted_and_drawn_afresh_when_they_ret
     assert screen.tick({1: "1"}) == ["show", "hide", "show"]
 
 
+def test_a_key_cap_is_redrawn_red_when_it_flashes_and_normal_when_it_ends():
+    screen = Screen()
+    screen.overlay.open()
+    names = {1: "1", 2: "2"}
+    screen.tick(names)
+    screen.tick(red={2})
+    screen.tick(red=set())
+    images = shown_images(screen)
+    assert len(images) == 3
+    assert np.array_equal(images[1], render_key_caps(names, 2160, red=frozenset({2})))
+    assert np.array_equal(images[2], images[0])
+
+
+def test_a_red_key_cap_is_not_redrawn_while_it_stays_red():
+    screen = Screen()
+    screen.overlay.open()
+    screen.tick({1: "1", 2: "2"}, red={2})
+    for _ in range(50):
+        screen.tick()
+    assert len(shown_images(screen)) == 1
+
+
+def test_red_for_a_slot_with_no_key_cap_changes_nothing():
+    screen = Screen()
+    screen.overlay.open()
+    screen.tick({1: "1"})
+    screen.tick(red={5})
+    screen.tick(red=set())
+    assert len(shown_images(screen)) == 1
+
+
+def test_red_does_not_keep_key_caps_up_when_none_are_wanted():
+    screen = Screen()
+    screen.overlay.open()
+    screen.tick({1: "1", 2: "2"}, red={2})
+    assert screen.tick({}) == ["show", "hide"]
+
+
+def test_a_flash_is_six_draws_red_normal_three_times_then_nothing_more():
+    clock = [10.0]
+    names = {1: "1", 2: "2"}
+    windows = []
+    overlay = Overlay(
+        lambda: names,
+        lambda: red_slots({2: 10.0}, clock[0]) & names.keys(),
+        2160,
+        lambda box: windows.append(FakeWindow(box)) or windows[-1],
+    )
+    overlay.open()
+    while clock[0] < 11.0:  # polled at 30 Hz, as in the app
+        overlay.tick()
+        clock[0] += 1 / 30
+    images = [image for kind, image in windows[0].events if kind == "show"]
+    red = render_key_caps(names, 2160, red=frozenset({2}))
+    assert [np.array_equal(i, red) for i in images] == [True, False, True, False, True, False]
+
+
 def test_run_ticks_until_stopped_then_closes_the_window():
     stop = threading.Event()
     calls = []
@@ -109,7 +170,7 @@ def test_run_ticks_until_stopped_then_closes_the_window():
         return {}
 
     windows = []
-    overlay = Overlay(names, 2160, lambda box: windows.append(FakeWindow(box)) or windows[-1])
+    overlay = Overlay(names, frozenset, 2160, lambda box: windows.append(FakeWindow(box)) or windows[-1])
     overlay.run(stop, interval=0)
     assert len(calls) == 3
     assert windows[0].pumped == 3
@@ -121,7 +182,7 @@ def test_run_closes_the_window_even_when_reading_the_key_caps_fails():
         raise RuntimeError("boom")
 
     windows = []
-    overlay = Overlay(names, 2160, lambda box: windows.append(FakeWindow(box)) or windows[-1])
+    overlay = Overlay(names, frozenset, 2160, lambda box: windows.append(FakeWindow(box)) or windows[-1])
     try:
         overlay.run(threading.Event(), interval=0)
     except RuntimeError:
@@ -156,7 +217,7 @@ def test_overlay_that_is_off_creates_no_window_and_no_thread():
         raise AssertionError("asked for a window class")
 
     started = start_overlay(
-        enabled=False, key_caps=dict, monitor=MONITOR, stop=threading.Event(), on_failure=print, window_class=never
+        enabled=False, key_caps=dict, red_key_caps=frozenset, monitor=MONITOR, stop=threading.Event(), on_failure=print, window_class=never
     )
     assert started is None
 
@@ -164,7 +225,7 @@ def test_overlay_that_is_off_creates_no_window_and_no_thread():
 def test_overlay_that_is_on_makes_its_window_over_the_monitor_and_ends_on_stop():
     windows, stop = RecordingWindowClass(), threading.Event()
     thread = start_overlay(
-        enabled=True, key_caps=lambda: {1: "1"}, monitor=MONITOR, stop=stop, on_failure=print, window_class=windows
+        enabled=True, key_caps=lambda: {1: "1"}, red_key_caps=frozenset, monitor=MONITOR, stop=stop, on_failure=print, window_class=windows
     )
     for _ in range(200):  # wait for the thread to have drawn
         if windows.windows and windows.windows[0].events:
@@ -184,7 +245,7 @@ def test_overlay_that_fails_reports_it_and_stops_without_raising():
         raise RuntimeError("no window for you")
 
     thread = start_overlay(
-        enabled=True, key_caps=dict, monitor=MONITOR, stop=threading.Event(), on_failure=failures.append, window_class=broken
+        enabled=True, key_caps=dict, red_key_caps=frozenset, monitor=MONITOR, stop=threading.Event(), on_failure=failures.append, window_class=broken
     )
     thread.join(2)
     assert not thread.is_alive()

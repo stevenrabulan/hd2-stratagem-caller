@@ -5,7 +5,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .arming import ArmingWindow, Outcome
+from .arming import ArmingWindow, Kind, Outcome
+from .flash import red_slots, start_flash
 from .reader import Reading
 
 if TYPE_CHECKING:
@@ -66,6 +67,7 @@ class KeyRouter:
         self._window: ArmingWindow | None = None
         self._window_trigger: "Key | None" = None  # the Trigger Key it holds (its Slot is the window's)
         self._reading: Reading | None = None
+        self._flashes: dict[int, float] = {}  # Slot -> when its Trigger Key last beeped
         self._held: dict[Ident, float] = {}  # key -> time of its latest key-down
         self._swallowed: set[Ident] = set()
 
@@ -137,6 +139,7 @@ class KeyRouter:
             self._window = window
             self._window_trigger = None
             self._reading = None
+            self._flashes = {}
         return window
 
     def _on_trigger_key(self, ident: Ident, key: "Key", slot: int) -> Decision:
@@ -213,6 +216,13 @@ class KeyRouter:
                 names.setdefault(slot, key.name)  # two keys for one Slot: the first shown
         return names
 
+    def red_key_caps(self) -> frozenset[int]:
+        """The Slots whose Key Cap is in a red step of a flash now: their Trigger Key just
+        beeped. Only Key Caps that are showing can be red."""
+        shown = self.key_caps()
+        with self._lock:
+            return red_slots(self._flashes, self._clock()) & shown.keys()
+
     # --- the worker thread's view of the Arming Window ---
 
     def offer(self, window: ArmingWindow, reading: Reading) -> Outcome | None:
@@ -258,11 +268,14 @@ class KeyRouter:
             current = self._window is window
             trigger = self._window_trigger if current else None
             reading = self._describe_reading()
+            slot = self.trigger_keys.get(trigger) if trigger is not None else None
             if current:
                 self._window_trigger = None
                 if outcome.ends_watch:
                     self._window = None
-        slot = self.trigger_keys.get(trigger) if trigger is not None else None
+                elif outcome.kind is Kind.BEEP and slot in window.key_cap_slots():
+                    # Only a Slot with a Key Cap flashes; one beyond the menu's end just beeps.
+                    self._flashes = start_flash(self._flashes, slot, self._clock())
         prefix = f"Slot {slot}: " if slot else ""
         self._log(f"{prefix}{outcome.description}; latest Reading: {reading}")
         return trigger

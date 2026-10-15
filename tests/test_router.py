@@ -644,3 +644,95 @@ def test_two_trigger_keys_for_one_slot_show_the_first_in_settings_order():
     kb, _ = watching_an_open_menu(1)
     kb.router.trigger_keys = {Key("f5", 63, False): 1, ONE: 1}
     assert kb.router.key_caps() == {1: "f5"}
+
+
+# --- the red flash: which Key Cap a beep flashes ---
+
+
+def red_at(kb, *times):
+    """The Slots in a red step of a flash at each of `times`."""
+    out = []
+    for at in times:
+        kb.now = at
+        out.append(set(kb.router.red_key_caps()))
+    return out
+
+
+def test_a_beep_flashes_that_slots_key_cap_red_three_times():
+    kb, _ = watching_an_open_menu(1, 2)
+    assert kb.down(TWO, 1.0).outcome == Outcome("beep")
+    assert red_at(kb, 1.0, 1.05, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.0) == [
+        {2}, {2}, set(), {2}, set(), {2}, set(), set(), set(),
+    ]  # fmt: skip
+
+
+def test_a_slot_that_can_be_called_does_not_flash():
+    kb, _ = watching_an_open_menu(1, 2)
+    assert kb.down(ONE, 1.0).outcome == Outcome("call", "DDUR")
+    assert red_at(kb, 1.0, 1.2) == [set(), set()]
+
+
+def test_a_beep_for_a_slot_beyond_the_end_of_the_menu_flashes_nothing():
+    kb, _ = watching_an_open_menu(1, 2)
+    assert kb.down(ZERO, 1.0).outcome == Outcome("beep")
+    assert red_at(kb, 1.0, 1.2, 1.4) == [set(), set(), set()]
+
+
+def test_a_second_beep_during_a_flash_restarts_it():
+    kb, _ = watching_an_open_menu(1, 2)
+    kb.down(TWO, 1.0)
+    kb.up(TWO, 1.02)
+    assert red_at(kb, 1.15) == [set()]  # between reds
+    kb.down(TWO, 1.15)
+    # Red again from the second beep (1.15 on), not on the first one's clock (1.0 on).
+    assert red_at(kb, 1.15, 1.25, 1.35, 1.45, 1.55, 1.65, 1.8) == [{2}, set(), {2}, set(), {2}, set(), set()]
+
+
+def test_two_slots_flash_on_their_own():
+    kb, _ = watching_an_open_menu(1, 2, 3)
+    three = Key("3", 4, False)
+    kb.router.trigger_keys[three] = 3
+    kb.down(TWO, 1.0)
+    kb.down(three, 1.1)
+    assert red_at(kb, 1.05, 1.15, 1.25) == [{2}, {3}, {2}]
+
+
+def test_a_slot_that_stays_unreadable_flashes_when_it_finally_beeps():
+    kb, window = watching_an_open_menu(1, 2)
+    unreadable = Reading(unreadable={2}, icons=listing(1, 2).icons, menu_open=True)
+    kb.now = 0.4
+    kb.router.offer(window, unreadable)
+    assert kb.down(TWO, 0.4).outcome is None  # waits for a Reading
+    outcome, at = None, 0.4
+    while outcome is None and at < 3:
+        at += 0.05
+        kb.now = at
+        outcome = kb.router.offer(window, unreadable)
+    assert outcome == Outcome("beep")
+    assert red_at(kb, at) == [set()]  # not yet: the watch's thread has still to report it
+    kb.router.finish(window, outcome)
+    assert red_at(kb, at, at + 0.15) == [{2}, set()]
+
+
+def test_no_red_key_cap_when_the_key_caps_are_hidden():
+    kb, _ = watching_an_open_menu(1, 2)
+    kb.down(TWO, 1.0)
+    kb.now = 1.0
+    kb.focused = "Notepad"
+    assert kb.router.red_key_caps() == frozenset()
+    kb.focused = TITLE
+    kb.router.paused = True
+    assert kb.router.red_key_caps() == frozenset()
+
+
+def test_a_flash_does_not_carry_over_to_the_next_watch():
+    kb, _ = watching_an_open_menu(1, 2)
+    kb.down(TWO, 1.0)
+    kb.up(TWO, 1.01)
+    kb.router.end_watch("test")
+    window = kb.down(CALL, 1.1).start_watching
+    for at in (1.2, 1.25):  # the menu is confirmed open again while the old flash would be red
+        kb.now = at
+        kb.router.offer(window, listing(1, 2))
+    assert kb.router.key_caps() == {1: "1", 2: "2"}
+    assert kb.router.red_key_caps() == frozenset()

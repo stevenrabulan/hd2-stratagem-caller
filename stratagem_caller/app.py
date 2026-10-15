@@ -70,6 +70,7 @@ class App:
         overlay.start_overlay(
             enabled=self.settings.overlay_enabled,
             key_caps=self.router.key_caps,
+            red_key_caps=self.router.red_key_caps,
             monitor=monitor,
             stop=self._quit,
             on_failure=self._overlay_failed,

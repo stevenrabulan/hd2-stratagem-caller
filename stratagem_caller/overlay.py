@@ -29,17 +29,21 @@ class Overlay:
     def __init__(
         self,
         key_caps: Callable[[], dict[int, str]],
+        red_key_caps: Callable[[], frozenset[int]],
         screen_height: int,
         make_window: Callable[[tuple[int, int, int, int]], Window],
     ):
         """`key_caps` says which Key Caps to show now (Slot -> key name; empty for none).
-        `make_window` takes the Key Cap column's box (left, top, width, height, relative
+        `red_key_caps` says which Slots are in a red step of a flash; one with no Key Cap
+        shown is ignored. `make_window` takes the Key Cap column's box (left, top, width, height, relative
         to the monitor) and returns a window."""
         self._key_caps = key_caps
+        self._red_key_caps = red_key_caps
         self._screen_height = screen_height
         self._make_window = make_window
         self._window: Window | None = None
-        self._drawn: dict[int, str] = {}  # what the window shows now; empty when hidden
+        # What the window shows now: Key Caps and which are red; empty when hidden.
+        self._drawn: tuple[dict[int, str], frozenset[int]] = ({}, frozenset())
 
     def open(self) -> None:
         """Create the window. Call on the thread that will tick it."""
@@ -47,14 +51,15 @@ class Overlay:
 
     def tick(self) -> None:
         """Bring the window in line with what should show, drawing only on a change."""
-        wanted = self._key_caps()
+        names = dict(self._key_caps())
+        wanted = (names, frozenset(self._red_key_caps()) & names.keys())
         if wanted == self._drawn:
             return
-        if wanted:
-            self._window.show(render_key_caps(wanted, self._screen_height))
+        if names:
+            self._window.show(render_key_caps(names, self._screen_height, red=wanted[1]))
         else:
             self._window.hide()
-        self._drawn = dict(wanted)
+        self._drawn = wanted
 
     def close(self) -> None:
         if self._window is not None:
@@ -84,6 +89,7 @@ def start_overlay(
     *,
     enabled: bool,
     key_caps: Callable[[], dict[int, str]],
+    red_key_caps: Callable[[], frozenset[int]],
     monitor: dict,
     stop: threading.Event,
     on_failure: Callable[[Exception], None],
@@ -100,7 +106,7 @@ def start_overlay(
         left, top, width, height = box
         return window_class()(monitor["left"] + left, monitor["top"] + top, width, height)
 
-    overlay = Overlay(key_caps, monitor["height"], make_window)
+    overlay = Overlay(key_caps, red_key_caps, monitor["height"], make_window)
 
     def run() -> None:
         try:

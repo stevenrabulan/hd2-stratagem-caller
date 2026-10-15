@@ -24,6 +24,7 @@ GLYPH_MARGIN = 6  # room kept between the glyph and each side of the cap
 
 # Colours are BGRA, premultiplied (what UpdateLayeredWindow expects). Never pure white.
 DARK = (30, 30, 30, 255)
+RED = (40, 40, 215, 255)  # the fill of a Key Cap whose Trigger Key just beeped
 YELLOW = (0, 233, 255, 255)  # #FFE900, the game's yellow
 
 # Key names too long for a Key Cap.
@@ -51,25 +52,26 @@ def cap_text(key_name: str) -> str:
     return SHORT_NAMES.get(key_name.lower(), key_name.upper())
 
 
-def render_key_caps(names: dict[int, str], screen_height: int) -> np.ndarray:
-    """The Key Cap column with a Key Cap for each Slot in `names` (Slot -> key name)."""
+def render_key_caps(names: dict[int, str], screen_height: int, red: frozenset[int] = frozenset()) -> np.ndarray:
+    """The Key Cap column with a Key Cap for each Slot in `names` (Slot -> key name), the
+    fill red for those Slots also in `red`. A Slot in `red` without a Key Cap gets none."""
     s = screen_height / reader.REFERENCE_HEIGHT
     left, _, width, height = column_box(screen_height)
     img = np.zeros((height, width, 4), np.uint8)
     for slot, name in names.items():
-        _draw_key_cap(img, slot, cap_text(name), s, origin_x=left)
+        _draw_key_cap(img, slot, cap_text(name), RED if slot in red else YELLOW, s, origin_x=left)
     return img
 
 
-def _draw_key_cap(img: np.ndarray, slot: int, text: str, s: float, origin_x: int) -> None:
+def _draw_key_cap(img: np.ndarray, slot: int, text: str, fill: tuple, s: float, origin_x: int) -> None:
     middle = reader.ICON_TOP + reader.ICON_SIZE / 2 + (slot - 1) * reader.SLOT_PITCH
     x0, x1 = round(CAP_LEFT * s) - origin_x, round(CAP_RIGHT * s) - origin_x
     y0, y1 = round((middle - CAP_ABOVE) * s), round((middle + CAP_BELOW) * s)
     r = max(2, round(CAP_RADIUS * s))
-    _rounded_rect(img, x0, y0, x1, y1, r, YELLOW)
+    _rounded_rect(img, x0, y0, x1, y1, r, fill)
     _glyph(img, text, (x0 + x1) / 2, (y0 + y1) / 2, s, room=x1 - x0 - 2 * round(GLYPH_MARGIN * s))
     bar_y0, bar_y1 = round((middle + BAR_TOP) * s), round((middle + BAR_BOTTOM) * s)
-    cv2.rectangle(img, (x0 + r, bar_y0), (x1 - r, bar_y1), YELLOW, -1, cv2.LINE_AA)
+    cv2.rectangle(img, (x0 + r, bar_y0), (x1 - r, bar_y1), fill, -1, cv2.LINE_AA)
 
 
 def _rounded_rect(img, x0, y0, x1, y1, r, colour):

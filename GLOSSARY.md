@@ -74,3 +74,10 @@ _Avoid_: HUD, window
 **Key Cap**:
 A drawing of a key in the Overlay, placed beside the thing that key acts on, such as a Trigger Key beside its Slot.
 _Avoid_: Badge, label, key hint
+
+**Beep**:
+The sound the tool makes when a Trigger Key cannot call its Slot (not callable, unreadable too long, or beyond the end of the menu).
+
+**Flash**:
+A Key Cap turning red three times in about 0.6 s when its Trigger Key earns a Beep. A Slot with no Key Cap only beeps.
+_Avoid_: Blink, alert
