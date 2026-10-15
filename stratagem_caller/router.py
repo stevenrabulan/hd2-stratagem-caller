@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 from .arming import ArmingWindow, Kind, Outcome
 from .flash import red_slots, start_flash
 from .reader import Reading
+from .terminal_prompt import TerminalPrompt
+from .terminal_watch import TerminalWatch
 
 if TYPE_CHECKING:
     from .winkeys import Key
@@ -38,6 +40,11 @@ class Decision:
     direct_presses_call_key: bool = True
     # Set when a Trigger Key was decided at once: the Call or beep to make now.
     outcome: Outcome | None = None
+    # Set when a Use Key press started a Terminal watch that needs reading.
+    start_terminal_watch: TerminalWatch | None = None
+    # Set when the Terminal Key was pressed while a Terminal waits for a Code: the key is
+    # swallowed and the tool is to enter the Code (or say it cannot).
+    enter_code: bool = False
 
 
 class KeyRouter:
@@ -45,6 +52,8 @@ class KeyRouter:
         self,
         *,
         call_key: "Key",
+        use_key: "Key",
+        terminal_key: "Key",
         direct_keys: "dict[Key, str]",
         trigger_keys: "dict[Key, int]",
         window_title: str,
@@ -54,6 +63,8 @@ class KeyRouter:
         log: Callable[[str], None],
     ):
         self.call_key = call_key
+        self.use_key = use_key
+        self.terminal_key = terminal_key
         self.direct_keys = direct_keys
         self.trigger_keys = trigger_keys
         self.window_title = window_title
@@ -67,6 +78,7 @@ class KeyRouter:
         self._window: ArmingWindow | None = None
         self._window_trigger: "Key | None" = None  # the Trigger Key it holds (its Slot is the window's)
         self._reading: Reading | None = None
+        self._terminal: TerminalWatch | None = None  # the watch for a Terminal's prompt
         self._flashes: dict[int, float] = {}  # Slot -> when its Trigger Key last beeped
         self._held: dict[Ident, float] = {}  # key -> time of its latest key-down
         self._swallowed: set[Ident] = set()
@@ -108,6 +120,12 @@ class KeyRouter:
                 skipped = "; menu open, Call Key skipped" if menu_shown else ""
                 self._log(f"direct key {key.name}: Call {code}{skipped}")
                 return Decision(False, direct_code=code, direct_presses_call_key=not menu_shown)
+        if self.use_key.matches(event):
+            return Decision(True, start_terminal_watch=self._on_use_key())
+        if self.terminal_key.matches(event):
+            decision = self._on_terminal_key(ident)
+            if decision is not None:
+                return decision
         trigger = self._trigger_for(event)
         if trigger is not None:
             return self._on_trigger_key(ident, *trigger)
@@ -124,6 +142,41 @@ class KeyRouter:
         for key, slot in self.trigger_keys.items():
             if key.matches(event):
                 return key, slot
+        return None
+
+    def _on_use_key(self) -> TerminalWatch | None:
+        with self._lock:
+            watch = self._terminal
+            if watch is None:
+                watch = self._terminal = TerminalWatch(self._clock())
+                started = True
+            else:
+                # Already watching: the 5 s and the safety limit count from this press. The
+                # worker thread carries on.
+                watch.restart(self._clock())
+                started = False
+        self._log(f"use key {self.use_key.name}: Terminal watch {'started' if started else 'restarted'}")
+        return watch if started else None
+
+    def _on_terminal_key(self, ident: Ident) -> Decision | None:
+        """The Decision when the Terminal Key is held back for a Terminal; None when it is not,
+        and the key goes on as an ordinary key or a Trigger Key."""
+        with self._lock:
+            watch = self._terminal
+            prompt = watch.prompt if watch is not None else None
+            menu_watched = self._window is not None and not self._window.done
+        if watch is None:
+            return None  # no Terminal to decide about: the key is not this tool's business
+        if prompt is not TerminalPrompt.INTERACT:
+            why = _describe_prompt(prompt)
+        elif menu_watched:
+            # The player opened the Stratagem Menu with the Call Key: this is a Slot, not a Code.
+            why = "Stratagem Menu watched, Trigger Key rules apply"
+        else:
+            self._swallowed.add(ident)
+            self._log(f"terminal key {self.terminal_key.name}: swallowed, {_describe_prompt(prompt)}")
+            return Decision(False, enter_code=True)
+        self._log(f"terminal key {self.terminal_key.name}: not swallowed, {why}")
         return None
 
     def _on_call_key(self) -> ArmingWindow | None:
@@ -183,7 +236,11 @@ class KeyRouter:
             else:
                 state = "watching"
             reading = self._describe_reading()
-        return f"{state}; latest Reading: {reading}"
+            terminal = self._terminal
+        text = f"{state}; latest Reading: {reading}"
+        if terminal is not None:
+            text += f"; Terminal watch running, {_describe_prompt(terminal.prompt)}"
+        return text
 
     def _describe_reading(self) -> str:
         reading = self._reading
@@ -280,7 +337,42 @@ class KeyRouter:
         self._log(f"{prefix}{outcome.description}; latest Reading: {reading}")
         return trigger
 
+    # --- the worker thread's view of the Terminal watch ---
+
+    def offer_terminal(self, watch: TerminalWatch, prompt: TerminalPrompt) -> None:
+        """Feed a reading of the Terminal Prompt to `watch`, which ends it when it is over.
+        Ignored if `watch` was replaced."""
+        with self._lock:
+            if self._terminal is not watch:
+                return
+            if self._foreground_title() != self.window_title:
+                reason = "game window lost focus"
+            else:
+                reason = watch.offer(prompt, self._clock())
+            if reason is None:
+                return
+            self._terminal = None
+        self._log(f"Terminal watch ended: {reason}")
+
+    def terminal_is_current(self, watch: TerminalWatch) -> bool:
+        with self._lock:
+            return self._terminal is watch
+
+    def end_terminal_watch(self, reason: str, only: TerminalWatch | None = None) -> None:
+        """End the Terminal watch from outside its normal course (pause, a failed reading). With
+        `only`, end it just if that is still the current one."""
+        with self._lock:
+            watch = self._terminal
+            if watch is None or (only is not None and watch is not only):
+                return
+            self._terminal = None
+        self._log(f"Terminal watch ended: {reason}")
+
     def close_window(self) -> None:
         with self._lock:
             self._window = None
 
+
+
+def _describe_prompt(prompt: TerminalPrompt) -> str:
+    return "no Terminal Prompt" if prompt is TerminalPrompt.NONE else f"Terminal Prompt reads {prompt.value}"

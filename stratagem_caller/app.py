@@ -25,6 +25,8 @@ from . import tray  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
+from .terminal_prompt import prompt_area, read_terminal_prompt  # noqa: E402
+from .terminal_watch import READING_INTERVAL as TERMINAL_READING_INTERVAL, TerminalWatch  # noqa: E402
 from .winkeys import Key  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,6 +59,8 @@ class App:
         self.on_pause_change: Callable[[], None] = lambda: None  # the Tray Icon follows the pause state
         self._pause_lock = threading.Lock()
         self.call_key = Key.named(settings.call_key)
+        self.use_key = Key.named(settings.use_key)
+        self.terminal_key = Key.named(settings.terminal_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
 
         # Set from the moment a send is decided until it has been typed, so the tool
@@ -67,6 +71,8 @@ class App:
         self._send_lock = threading.Lock()
         self.router = KeyRouter(
             call_key=self.call_key,
+            use_key=self.use_key,
+            terminal_key=self.terminal_key,
             direct_keys={Key.named(k): code for k, code in settings.direct_keys.items()},
             trigger_keys={Key.named(k): slot for k, slot in settings.trigger_keys.items()},
             window_title=settings.window_title,
@@ -121,6 +127,12 @@ class App:
             threading.Thread(
                 target=self._watch_menu, args=(decision.start_watching,), daemon=True
             ).start()
+        if decision.start_terminal_watch is not None:
+            threading.Thread(
+                target=self._watch_terminal, args=(decision.start_terminal_watch,), daemon=True
+            ).start()
+        if decision.enter_code:
+            self._spawn(self._enter_code, sends=False)
         if decision.outcome is not None:
             # A Trigger Key decided at once from the Readings already taken.
             self._spawn(self._act, decision.outcome, sends=decision.outcome.sends_keys)
@@ -189,6 +201,32 @@ class App:
             # only restart it). A no-op when the watch already ended.
             self.router.end_watch("reading stopped", only=window)
 
+    def _watch_terminal(self, watch: TerminalWatch) -> None:
+        """Read the Terminal Prompt until the Terminal watch ends: no prompt within 5 s of the
+        Use Key press, the prompt gone for about a second, the game losing focus, the safety
+        limit, or a pause (which drops the watch, so `terminal_is_current` turns false). Always
+        returns when the watch is over."""
+        try:
+            with mss.MSS() as sct:
+                monitor = sct.monitors[1]
+                area = prompt_area(monitor)
+                while self.router.terminal_is_current(watch):
+                    region = np.asarray(sct.grab(area))[:, :, :3]
+                    self.router.offer_terminal(watch, read_terminal_prompt(region, monitor["height"]))
+                    time.sleep(TERMINAL_READING_INTERVAL)
+        finally:
+            # An error must not leave a watch with no worker (the Terminal Key would stay held
+            # on a stale reading). A no-op when the watch already ended.
+            self.router.end_terminal_watch("reading stopped", only=watch)
+
+    def _enter_code(self) -> None:
+        """The Terminal Key was pressed while the Terminal Prompt reads INTERACT. Reading the Code
+        on the Terminal's screen and typing it is the next ticket; until then the key is held
+        back and the tool beeps (a Beep with no Slot, so only the tones, no Key Cap flash). That
+        next ticket replaces this body: read the Code, type it, or beep when it cannot be read."""
+        self._log("Code not read yet")
+        self._beep.play()
+
     def _act(self, outcome: Outcome, trigger: Key | None = None) -> None:
         """Carry out what a Trigger Key came to. Once paused nothing is typed or tapped
         (a beep is only a sound). A key held when focus was lost, or a closed menu,
@@ -254,9 +292,12 @@ class App:
         own threads, so the two always agree and the Tray Icon follows either."""
         with self._pause_lock:
             self.router.paused = not self.router.paused
-            # The worker sees the watch is gone and exits. A Trigger Key still held is
-            # given back to the game.
-            held = self.router.end_watch("paused") if self.router.paused else None
+            held = None
+            if self.router.paused:
+                # The workers see their watch is gone and exit. A Trigger Key still held is
+                # given back to the game.
+                held = self.router.end_watch("paused")
+                self.router.end_terminal_watch("paused")
             if held is not None:
                 self._spawn(self._hand_back, held, sends=True)
             self._tone(440 if self.router.paused else 880, 120)
@@ -311,6 +352,7 @@ def main() -> None:
     if height != REFERENCE_HEIGHT:
         print(f"  Warning: only tested at {REFERENCE_HEIGHT}; Trigger Keys may not read the menu.")
     print(f"  Call Key [{settings.call_key}] then {', '.join(settings.trigger_keys)} for Slots")
+    print(f"  Use Key [{settings.use_key}] at a Terminal, then Terminal Key [{settings.terminal_key}] (beeps for now: the Code is not read yet)")
     for key, code in settings.direct_keys.items():
         print(f"  Direct Key [{key}] -> {code}")
     print(f"  [{settings.pause_key}] pause/resume, [{settings.mark_key}] mark something unexpected, Ctrl+C here to quit")

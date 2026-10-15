@@ -16,6 +16,8 @@ ONE = Key("1", 2, False)
 TWO = Key("2", 3, False)
 ZERO = Key("0", 11, False)
 REINFORCE = Key("page down", 81, True)
+USE = Key("e", 18, False)
+RETURN = Key("enter", 28, False)
 TITLE = "HELLDIVERS 2"
 MENU = Reading(codes={1: "DDUR", 2: "DLRDLR"}, menu_open=True)
 
@@ -34,13 +36,15 @@ HELD_KEYS = {
 class Keyboard:
     """A scripted keyboard: feed it presses and releases at chosen times."""
 
-    def __init__(self, focused=TITLE):
+    def __init__(self, focused=TITLE, terminal_key=ONE):
         self.now = 0.0
         self.focused = focused
         self.sending = False
         self.lines = []
         self.router = KeyRouter(
             call_key=CALL,
+            use_key=USE,
+            terminal_key=terminal_key,
             direct_keys={REINFORCE: "DDDUUR"},
             trigger_keys={ONE: 1, TWO: 2, ZERO: 10},
             window_title=TITLE,

@@ -12,6 +12,8 @@ class SettingsError(Exception):
 @dataclass(frozen=True)
 class Settings:
     call_key: str
+    use_key: str
+    terminal_key: str
     direction_keys: dict[str, str]  # "U"/"D"/"L"/"R" -> key name
     trigger_keys: dict[str, int]  # key name -> Slot
     direct_keys: dict[str, str]  # key name -> Code
@@ -50,6 +52,13 @@ def _overlay_enabled(raw: dict) -> bool:
     return enabled
 
 
+def _key_name(raw: dict, name: str, default: str) -> str:
+    value = raw.get(name, default)
+    if not isinstance(value, str) or not value:
+        raise SettingsError(f"{name} must be a key name such as {default!r}, not {value!r}")
+    return value
+
+
 def load(settings_path: Path, code_book_path: Path) -> Settings:
     with settings_path.open("rb") as f:
         raw = tomllib.load(f)
@@ -57,8 +66,14 @@ def load(settings_path: Path, code_book_path: Path) -> Settings:
     directions = raw["direction_keys"]
     if set(directions) != set("UDLR"):
         raise SettingsError("[direction_keys] needs exactly U, D, L and R")
+    use_key = _key_name(raw, "use_key", "e")
+    terminal_key = _key_name(raw, "terminal_key", "1")
+    if use_key.lower() == terminal_key.lower():
+        raise SettingsError(f"use_key and terminal_key must be different keys, both are {use_key!r}")
     return Settings(
         call_key=raw["call_key"],
+        use_key=use_key,
+        terminal_key=terminal_key,
         direction_keys=dict(directions),
         trigger_keys={key: int(slot) for key, slot in raw["trigger_keys"].items()},
         direct_keys={

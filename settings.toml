@@ -7,6 +7,17 @@
 # (press), not hold, in the game's settings.
 call_key = "b"
 
+# The key bound in-game to interact with objects. Each press makes the tool look for a
+# Terminal waiting for a Code (it gives up after 5 s if none appears). The key still
+# reaches the game.
+use_key = "e"
+
+# While a Terminal waits for a Code (its prompt reads INTERACT), this key is swallowed
+# and the tool beeps; away from a Terminal it does what it always did: a Trigger Key
+# while the Stratagem Menu is open, otherwise an ordinary key for the game. Choose one
+# that is not your Use Key.
+terminal_key = "1"
+
 # The tool only acts while a window with exactly this title is focused.
 window_title = "HELLDIVERS™ 2"
 
