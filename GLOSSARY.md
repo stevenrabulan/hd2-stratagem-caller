@@ -64,7 +64,7 @@ The key the player has bound in-game to interact with objects. E by default.
 _Avoid_: Interact key, "E"
 
 **Terminal Key**:
-A key that enters the Code a Terminal is showing, on the player's behalf. Return by default.
+A key that enters the Code a Terminal is showing, on the player's behalf. 1 by default. While no Terminal's Code is read, the same key does whatever it otherwise would.
 _Avoid_: Enter key, return key
 
 **Overlay**:

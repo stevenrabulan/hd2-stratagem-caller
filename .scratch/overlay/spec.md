@@ -1,6 +1,6 @@
 # The Overlay shows a Key Cap beside each Slot while the Stratagem Menu is open
 
-Status: ready-for-human
+Status: resolved
 
 Tickets are in `issues/`; see Comments. All three are repo-complete; only the in-game player checks are left.
 

@@ -6,12 +6,12 @@ The prototype on branch `prototype/overlay` has the heading drawing, its placeme
 
 **Blocked by:** 01
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] The heading shows and hides with the Key Caps
 - [x] Pulsing changes only the window's opacity; the picture is sent once per showing
 - [x] The Overlay-can't-change-a-Reading test covers the heading
-- [ ] (player) Confirmed in-game: heading readable, no stutter
+- [x] (player) Confirmed in-game: heading readable, no stutter
 
 ## Comments
 
@@ -36,3 +36,5 @@ Judgement calls:
 - Review points left: the two windows are separate Win32 calls, so up to one tick of skew between Key Caps and heading is possible. Overlay now holds two small state machines (a `HeadingPane` collaborator is a later tidy). `screen_height <= 0` is not validated (same as keycaps). Existing, not touched: 94 Key Cap anti-aliased edge pixels have colour above alpha (from `cv2` drawing on BGRA); not a Reading risk (blue channel stays low), but could be redrawn the way the heading now is.
 
 To check on Windows (the unticked box): run the tool in-game (borderless, HDR), open the menu with the Call Key, and confirm STRATAGEM CALLER READY appears just right of the STRATAGEMS header in yellow with a soft glow, fades down and up about once every 1.2 s, is readable, and causes no stutter. It must vanish together with the Key Caps (Call starts, Call Key closes the menu, Alt+Tab, pause). If it sits on the wrong line or overlaps the header, adjust `TEXT_LEFT` / `TEXT_MIDDLE` in `stratagem_caller/heading.py`. If the fade does not show, the blend-only `UpdateLayeredWindow` call in `LayeredWindow.set_opacity` is the place to look; the terminal warns and the log has an "Overlay stopped" line if a Win32 call fails.
+
+**Resolved 2026-10-15.** Confirmed in-game on Windows by the player (borderless, HDR): Key Caps visible beside each Slot, game keeps focus, no stutter; a Slot on cooldown beeps and flashes red; Key Caps and heading vanish on a Call, the Call Key closing the menu, Alt+Tab and pause. 340 tests pass on Windows.

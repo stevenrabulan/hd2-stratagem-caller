@@ -10,14 +10,15 @@ Mission Terminals (log-ins, the extraction terminal, uploads) ask the player to 
 
 ## Solution
 
-Each Use Key press makes the tool look for a Terminal's Code. While one is on screen and read, the Overlay shows a Key Cap for the Terminal Key (Return by default), and pressing it enters the Code with the Direction Keys at the same timing as a Call.
+Each Use Key press makes the tool look for a Terminal's Code. While one is on screen and read, the Overlay shows a Key Cap for the Terminal Key (`1` by default), and pressing it enters the Code with the Direction Keys at the same timing as a Call.
 
 ## Decisions so far
 
 - **Start:** every Use Key press (E by default; the game treats it as a hold bind, the tool starts on key-down). The Use Key is also used for samples, ammo and pods, so the tool gives up if no Code appears within 5 s of the press (covers the walk-up animation).
 - **End:** once a Code has been seen, the tool keeps watching until the Code leaves the screen, the game loses focus, the tool is paused, or a safety limit passes.
 - **Terminal Key while a Code is read:** swallowed; the Code is typed with the Direction Keys at `keystroke_ms` timing.
-- **Terminal Key with no Terminal seen:** goes to the game untouched (Return opens chat in-game).
+- **Terminal Key:** `1` by default, set by `terminal_key` in `settings.toml`. Return was the first idea but was dropped (2026-10-15, player's choice). `1` is also the default Trigger Key for Slot 1 and the game's weapon-switch key, so it is a Terminal Key only while a Terminal's Code is read (or a Terminal is seen but its Code can't be read).
+- **Terminal Key with no Terminal seen:** behaves as it otherwise would: a Trigger Key while the tool is watching the Stratagem Menu, otherwise it goes to the game untouched.
 - **Terminal seen but Code unreadable:** the Terminal Key is swallowed, the tool beeps, and the Terminal Key's Key Cap flashes red three times.
 - **One press, one Code.** Terminals that chain steps (Launch ICBM, Retrieve Valuable Data, Emergency Evacuation) need one press per Code. Steps that are not arrow Codes (digit codes, grid targets, dials, dish alignment, valves) are out of scope.
 - **Direction Keys:** Terminals appear to use the Stratagem direction binds. The screenshot's HUD prompt shows the arrow keys, which are this player's Direction Keys. Confirm with the fixtures.

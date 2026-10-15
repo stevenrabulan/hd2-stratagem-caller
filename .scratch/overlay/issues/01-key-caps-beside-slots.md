@@ -8,7 +8,7 @@ The reader has to report which Slots show an Icon, not just the callable ones: t
 
 **Blocked by:** none
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] A Reading reports every Slot whose Icon is in place, including Slots on cooldown; tested on the menu fixtures
 - [x] Given scripted Readings and key presses, the router/Arming Window says when Key Caps show and on which Slots, covering each show/hide rule above
@@ -18,7 +18,7 @@ The reader has to report which Slots show an Icon, not just the callable ones: t
 - [x] No Overlay pixel is pure white, and nothing is drawn at x >= 98 (at 3840x2160) in the Key Cap column
 - [x] `[overlay] enabled = false` creates no window
 - [x] README: the Overlay is built, with its setting; the Status line no longer says it is not built
-- [ ] (player) Confirmed in-game with the tool alone: Key Caps visible, game keeps focus, no stutter
+- [x] (player) Confirmed in-game with the tool alone: Key Caps visible, game keeps focus, no stutter
 
 ## Comments
 
@@ -40,3 +40,5 @@ Judgement calls:
 - Left for tickets 02 and 03: `Overlay.tick` compares one "what to draw" value (add red Slots there); the heading needs a second window and a per-window fade, which `LayeredWindow.show` does not have yet (alpha fixed at 255); the router reports no beeps yet.
 
 To check on Windows (the unticked box): run the tool alone in-game with borderless fullscreen and HDR, open the menu with the Call Key, and confirm Key Caps appear left of each Icon (cooldown Slots too, Slot 10 shows `0`), the game keeps focus and mouse, no stutter, and Key Caps vanish on a Call, on the Call Key closing the menu, on Alt+Tab and on pause (`Ctrl+Alt+P`). If the window does not appear, the terminal warns and the log has an "Overlay stopped" line naming the Win32 call that failed.
+
+**Resolved 2026-10-15.** Confirmed in-game on Windows by the player (borderless, HDR): Key Caps visible beside each Slot, game keeps focus, no stutter; a Slot on cooldown beeps and flashes red; Key Caps and heading vanish on a Call, the Call Key closing the menu, Alt+Tab and pause. 340 tests pass on Windows.

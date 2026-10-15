@@ -6,13 +6,13 @@ The prototype on branch `prototype/overlay` has the flash timing and red drawing
 
 **Blocked by:** 01
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Given scripted Readings and key presses, a beep reports which Slot's Key Cap to flash
 - [x] The flash shows red, normal, red, normal, red, normal, then stays normal
 - [x] A beep for a Slot beyond the end of the menu flashes nothing
 - [x] The Overlay-can't-change-a-Reading test covers red Key Caps
-- [ ] (player) Confirmed in-game: pressing a Slot on cooldown beeps and flashes its Key Cap
+- [x] (player) Confirmed in-game: pressing a Slot on cooldown beeps and flashes its Key Cap
 
 ## Comments
 
@@ -36,3 +36,5 @@ Judgement calls:
 - Review points left as they are: `red_key_caps` returns Slots, though its name says Key Caps (follows the spec's wording); "only a shown Key Cap flashes" is checked in the router, the Overlay and the drawing, deliberately redundant because each is a separate seam; `key_caps` and `red_key_caps` stay two callables (a small state type is a later tidy). A Trigger Key pressed in the instant between a beep being decided and reported would flash its own Slot instead (an old race in `finish`, rare and cosmetic).
 
 To check on Windows (the unticked box): run the tool in-game, open the menu with the Call Key, press the Trigger Key of a Slot on cooldown, and confirm it beeps and that Slot's Key Cap flashes red three times, about 0.6 s in all. Also press the Trigger Key `0` when the menu has fewer than ten Slots: it beeps and nothing flashes. Press the same key twice quickly: the second press restarts the flash.
+
+**Resolved 2026-10-15.** Confirmed in-game on Windows by the player (borderless, HDR): Key Caps visible beside each Slot, game keeps focus, no stutter; a Slot on cooldown beeps and flashes red; Key Caps and heading vanish on a Call, the Call Key closing the menu, Alt+Tab and pause. 340 tests pass on Windows.
