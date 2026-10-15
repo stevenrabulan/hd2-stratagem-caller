@@ -27,3 +27,5 @@ The 2026-10-12 captures show no settled open menu read as closed. The "not open"
 - Keep the last few screen regions read (about 8, roughly 0.4 to 1.6 s). When a beep fires on `UNREADABLE_LIMIT`, or a held Trigger Key is handed back, write them to `fixtures/raw/failures/<time>_<slot>_<reason>_<n>.png` off the hot path. Region only (800×1500 at 4K, about 2 MB each), not the full screen, so no desktop content is captured. Cap the folder size (for example, the newest 200 files).
 
 ## Comments
+
+**2026-10-15 (overlay session).** The Mark Key (`mark_key = "f9"`) now keeps the last 16 regions read in `App.recent` (`stratagem_caller/marks.py`) and saves them to `fixtures/raw/marks/` when the player presses it, with a `MARK n:` log line from `KeyRouter.describe()`. Saving on an automatic failure can reuse `RecentRegions` and `save_mark`; Call Key logging and the folder size cap are still open.

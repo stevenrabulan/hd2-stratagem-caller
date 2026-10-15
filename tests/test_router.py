@@ -484,3 +484,17 @@ def test_a_finished_watch_cannot_wipe_the_held_key_of_a_new_one():
     assert not kb.down(ONE, 61.2).let_through
     assert kb.router.finish(old, outcome) is None
     assert kb.router.end_watch("paused") == ONE
+
+
+def test_a_mark_describes_the_watch_and_the_latest_reading():
+    kb = Keyboard()
+    assert kb.router.describe() == "not watching; latest Reading: none yet"
+    window = kb.down(CALL, 0.0).start_watching
+    kb.down(TWO, 0.1)
+    assert kb.router.describe() == "watching, Trigger Key held for Slot 2; latest Reading: none yet"
+    kb.router.finish(window, Outcome("pass"))
+    window = kb.down(CALL, 2.0).start_watching
+    kb.router.offer(window, MENU)
+    assert kb.router.describe() == "watching; latest Reading: menu open, Slots 1,2"
+    kb.router.paused = True
+    assert kb.router.describe().startswith("paused;")

@@ -13,6 +13,11 @@ window_title = "HELLDIVERS™ 2"
 # Stops and resumes the tool without closing it.
 pause_key = "ctrl+alt+p"
 
+# Press when something unexpected happens. The log gets a MARK line, and the
+# screen regions read in the last few seconds are saved to fixtures/raw/marks/.
+# The key still reaches the game.
+mark_key = "f9"
+
 # Random range for how long each key is held, and for the gap before the next.
 keystroke_ms = [31, 62]
 

@@ -158,6 +158,21 @@ class KeyRouter:
             reading = self._describe_reading()
         self._log(f"trigger key Slot {slot}: {decision}; latest Reading: {reading}")
 
+    def describe(self) -> str:
+        """The watch and the latest Reading in words, for a mark in the log."""
+        with self._lock:
+            window = self._window
+            if self.paused:
+                state = "paused"
+            elif window is None:
+                state = "not watching"
+            elif window.slot is not None:
+                state = f"watching, Trigger Key held for Slot {window.slot}"
+            else:
+                state = "watching"
+            reading = self._describe_reading()
+        return f"{state}; latest Reading: {reading}"
+
     def _describe_reading(self) -> str:
         reading = self._reading
         if reading is None:

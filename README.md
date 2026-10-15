@@ -20,6 +20,7 @@ Start it before or during a mission, and leave the terminal open:
 - Press the Call Key, then `1`–`9` or `0` while the menu is open. While the menu is already open the Call starts the moment you press the key. If you press it while the menu is still sliding in, the Call starts as soon as that Slot's Code has been read, which is usually within a quarter of a second or so.
 - A low beep means that Slot has no Stratagem you can call right now (cooldown, inbound, or empty).
 - `Ctrl+Alt+P` pauses and resumes. `Ctrl+C` in the terminal quits.
+- `F9` marks something unexpected: it gives a short high beep, writes a `MARK` line to `logs/stratagem_caller.log` with what the tool believed at that moment, and saves the screen regions it read in the last few seconds to `fixtures/raw/marks/`. Press it right after the problem, then share the mark number.
 - Keys, timing and Direct Keys are set in [settings.toml](settings.toml).
 
 Run the tests with:

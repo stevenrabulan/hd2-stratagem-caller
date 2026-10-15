@@ -17,6 +17,7 @@ import numpy as np  # noqa: E402
 
 from .arming import ArmingWindow, Kind, Outcome  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
+from .marks import RecentRegions, save_mark  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
@@ -24,6 +25,10 @@ from .winkeys import Key  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = ROOT / "logs" / "stratagem_caller.log"
+# Screen regions saved by the Mark Key. Under fixtures/raw/, so not in version control.
+MARKS_DIR = ROOT / "fixtures" / "raw" / "marks"
+# Regions kept for a mark: about 1 to 3 s of watching (about 3.6 MB each at 4K).
+RECENT_REGIONS = 16
 
 # Reading the menu before it has started to slide in is wasted work.
 FIRST_READING_DELAY = 0.15
@@ -32,6 +37,9 @@ FIRST_READING_DELAY = 0.15
 class App:
     def __init__(self, settings: Settings, log: Callable[[str], None] = lambda text: None):
         self.settings = settings
+        self._log = log
+        self.recent = RecentRegions(RECENT_REGIONS)
+        self._marks = 0
         self.call_key = Key.named(settings.call_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
 
@@ -103,11 +111,11 @@ class App:
         try:
             with mss.MSS() as sct:
                 monitor = sct.monitors[1]
-                width, height = region_size(monitor["height"])
-                area = {"left": monitor["left"], "top": monitor["top"], "width": width, "height": height}
+                area = _menu_area(monitor)
                 time.sleep(FIRST_READING_DELAY)
                 while self.router.is_current(window):
                     region = np.asarray(sct.grab(area))[:, :, :3]
+                    self.recent.add(time.monotonic(), region)
                     reading = read_menu(region, monitor["height"])
                     outcome = self.router.offer(window, reading)
                     if outcome is not None:
@@ -169,6 +177,24 @@ class App:
         winkeys.send(key, down=False)
         time.sleep(random.uniform(*(gap or self.settings.keystroke_ms)) / 1000)
 
+    # --- mark ---
+
+    def mark(self) -> None:
+        """The player saw something unexpected: log what the tool believes now, and save
+        the regions it last read plus one taken now. Runs on the Mark Key's thread."""
+        self._marks += 1
+        number, marked_at = self._marks, time.monotonic()
+        self._log(f"MARK {number}: {self.router.describe()}")
+        regions = self.recent.snapshot()
+        threading.Thread(target=self._save_mark, args=(number, marked_at, regions), daemon=True).start()
+        winsound.Beep(1200, 60)
+
+    def _save_mark(self, number: int, marked_at: float, regions: list) -> None:
+        with mss.MSS() as sct:
+            at_mark = np.asarray(sct.grab(_menu_area(sct.monitors[1])))[:, :, :3]
+        folder = save_mark(MARKS_DIR, number, marked_at, regions, at_mark)
+        print(f"mark {number}: saved {len(regions) + 1} screen regions to {folder}")
+
     # --- pause ---
 
     def toggle_pause(self) -> None:
@@ -180,6 +206,12 @@ class App:
             self._spawn(self._hand_back, held, sends=True)
         winsound.Beep(440 if self.router.paused else 880, 120)
         print("paused" if self.router.paused else "resumed")
+
+
+def _menu_area(monitor: dict) -> dict:
+    """The top-left screen region the reader needs."""
+    width, height = region_size(monitor["height"])
+    return {"left": monitor["left"], "top": monitor["top"], "width": width, "height": height}
 
 
 def main() -> None:
@@ -194,10 +226,11 @@ def main() -> None:
     print(f"  Call Key [{settings.call_key}] then {', '.join(settings.trigger_keys)} for Slots")
     for key, code in settings.direct_keys.items():
         print(f"  Direct Key [{key}] -> {code}")
-    print(f"  [{settings.pause_key}] pause/resume, Ctrl+C here to quit")
+    print(f"  [{settings.pause_key}] pause/resume, [{settings.mark_key}] mark something unexpected, Ctrl+C here to quit")
     print(f"  Logging Trigger Keys and Calls to {LOG_PATH}")
     keyboard.hook(app.on_event, suppress=True)
     keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
+    keyboard.add_hotkey(settings.mark_key, app.mark)
     try:
         while True:
             time.sleep(1)
