@@ -1,6 +1,6 @@
 # Direct Key inside the Arming Window should not press the Call Key
 
-Status: needs-triage
+Status: resolved
 
 Not planned yet. Do only if it turns out to be cheap.
 
@@ -15,3 +15,9 @@ If a Direct Key is pressed while the Arming Window is open, skip the Call Key pr
 ## Out of scope
 
 Any other case where the menu is already open (for example, opened more than a second ago). Direct Keys stay blind there by design; see [ADR 0001](../../../docs/adr/0001-read-codes-from-the-screen.md).
+
+## Comments
+
+Done on branch `direct-key-in-arming-window`. `ArmingWindow.is_open(now)` decides it; the key hook checks it, closes the Arming Window (so a pending Trigger Key is dropped), and skips the Call Key press. Covered by a unit test on `is_open`; the hook wiring needs a check in a mission on Windows.
+
+**2026-10-15, merged into `overlay`.** `main` had this change on the old one-second Arming Window. In the newer watching model it lives in the router: a Direct Key skips the Call Key while the tool is watching a menu that is open or opening (`ArmingWindow.menu_shown()`), but not while the player's latest Call Key press is closing it or after a Call. It still ends the watch, dropping a held Trigger Key. Covered by arming and router tests; still needs a check in a mission.

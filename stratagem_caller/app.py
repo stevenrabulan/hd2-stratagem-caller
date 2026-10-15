@@ -74,7 +74,7 @@ class App:
             # A Trigger Key decided at once from the Readings already taken.
             self._spawn(self._act, decision.outcome, sends=decision.outcome.sends_keys)
         if decision.direct_code is not None:
-            self._spawn(self._direct_call, decision.direct_code, sends=True)
+            self._spawn(self._direct_call, decision.direct_code, decision.direct_presses_call_key, sends=True)
         return decision.let_through
 
     def _spawn(self, target: Callable, *args, sends: bool) -> None:
@@ -155,9 +155,10 @@ class App:
         with self._send_lock:
             self._tap(trigger)
 
-    def _direct_call(self, code: str) -> None:
+    def _direct_call(self, code: str, press_call_key: bool) -> None:
         with self._send_lock:
-            self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
+            if press_call_key:
+                self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
             self._tap_code(code)
         self.router.close_window()
 

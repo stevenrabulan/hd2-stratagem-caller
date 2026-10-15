@@ -5,5 +5,5 @@ Helldivers 2 sometimes adds temporary Stratagems or changes a Code, so a built-i
 ## Consequences
 
 - Trigger Keys depend on screen capture and image recognition working on the player's display setup (resolution, scaling, HDR). Direct Keys do not.
-- A Direct Key types its Code blind. With a Call Key that toggles, pressing one while the Stratagem Menu is already open closes the menu instead of calling.
+- A Direct Key types its Code blind. With a Call Key that toggles, pressing one while the Stratagem Menu is already open closes the menu instead of calling. The one exception is while the tool is watching a menu the player opened with the Call Key: it knows the menu is open or opening, so it skips the Call Key press.
 - The Code Book needs manual upkeep; a wrong entry affects only Direct Keys that name it.

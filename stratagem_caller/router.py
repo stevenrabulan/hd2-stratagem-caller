@@ -32,6 +32,9 @@ class Decision:
     start_watching: ArmingWindow | None = None
     # Set when a Direct Key was pressed: the Code to Call.
     direct_code: str | None = None
+    # False when the tool is watching a menu the player has just opened: pressing the
+    # Call Key for the Direct Key would close it.
+    direct_presses_call_key: bool = True
     # Set when a Trigger Key was decided at once: the Call or beep to make now.
     outcome: Outcome | None = None
 
@@ -95,8 +98,14 @@ class KeyRouter:
         for key, code in self.direct_keys.items():
             if key.matches(event):
                 self._swallowed.add(ident)
-                self._log(f"direct key {key.name}: Call {code}")
-                return Decision(False, direct_code=code)
+                with self._lock:
+                    # A held Trigger Key is dropped with the watch.
+                    menu_shown = self._window is not None and self._window.menu_shown()
+                    self._window = None
+                    self._window_trigger = None
+                skipped = "; menu open, Call Key skipped" if menu_shown else ""
+                self._log(f"direct key {key.name}: Call {code}{skipped}")
+                return Decision(False, direct_code=code, direct_presses_call_key=not menu_shown)
         trigger = self._trigger_for(event)
         if trigger is not None:
             return self._on_trigger_key(ident, *trigger)

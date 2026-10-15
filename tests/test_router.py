@@ -498,3 +498,30 @@ def test_a_mark_describes_the_watch_and_the_latest_reading():
     assert kb.router.describe() == "watching; latest Reading: menu open, Slots 1,2"
     kb.router.paused = True
     assert kb.router.describe().startswith("paused;")
+
+
+def test_direct_key_presses_the_call_key_when_no_menu_is_watched():
+    kb = Keyboard()
+    assert kb.down(REINFORCE, 0.0).direct_presses_call_key
+
+
+def test_direct_key_skips_the_call_key_and_ends_the_watch_when_the_menu_was_just_opened():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.up(CALL, 0.05)
+    kb.down(TWO, 0.1)  # held, waiting for a Reading
+    decision = kb.down(REINFORCE, 0.2)
+    assert decision.direct_code == "DDDUUR" and not decision.direct_presses_call_key
+    assert not kb.router.is_current(window)
+    assert "Call Key skipped" in kb.lines[-1]
+
+
+def test_direct_key_presses_the_call_key_while_a_call_key_press_is_closing_the_menu():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.up(CALL, 0.05)
+    kb.router.offer(window, MENU)
+    kb.now = 0.1
+    kb.router.offer(window, MENU)
+    kb.down(CALL, 2.0)  # closing the open menu
+    assert kb.down(REINFORCE, 2.1).direct_presses_call_key

@@ -122,6 +122,11 @@ class ArmingWindow:
         if self.slot is not None:
             self._pending_since = now
 
+    def menu_shown(self) -> bool:
+        """Whether the menu is open or opening as far as the tool knows: false once a
+        Call is made and while the latest Call Key press is taken as closing it."""
+        return not self.done and self._closing_since is None
+
     def press(self, slot: int, now: float) -> Press:
         """A Trigger Key went down."""
         if self.done:

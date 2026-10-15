@@ -412,3 +412,22 @@ def test_confirmed_callable_slot_is_called_at_once_on_a_fresh_menu():
     s = Script()
     s.see(OPEN, 0.25, 0.3)
     assert s.window.press(1, now=0.31) == Press(True, Outcome("call", "DDUR"))
+
+
+def test_menu_counts_as_shown_while_opening_and_once_open():
+    s = Script()
+    assert s.window.menu_shown()
+    s.open_for_a_while()
+    assert s.window.menu_shown()
+
+
+def test_menu_does_not_count_as_shown_while_a_call_key_press_is_closing_it():
+    s = Script().open_for_a_while()
+    s.window.restart(1.0)
+    assert not s.window.menu_shown()
+
+
+def test_menu_does_not_count_as_shown_once_a_call_is_made():
+    s = Script().open_for_a_while()
+    s.window.press(1, now=0.31)
+    assert not s.window.menu_shown()
