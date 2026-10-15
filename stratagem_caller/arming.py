@@ -26,6 +26,9 @@ class ArmingWindow:
         self._previous: dict[int, str] | None = None
         self._seen_menu = False
 
+    def is_open(self, now: float) -> bool:
+        return now < self.deadline
+
     def press(self, slot: int, now: float) -> bool:
         """A Trigger Key went down. True if the window takes it (swallow the key)."""
         if self.slot is not None or now >= self.deadline:

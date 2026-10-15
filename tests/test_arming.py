@@ -61,3 +61,10 @@ def test_window_expires_without_a_trigger_key():
     w = window()
     assert w.offer(MENU, now=0.5) is None
     assert w.offer(MENU, now=1.0) == Outcome("expired")
+
+
+def test_window_is_open_until_its_deadline():
+    w = window()
+    assert w.is_open(now=0.0)
+    assert w.is_open(now=0.99)
+    assert not w.is_open(now=1.0)
