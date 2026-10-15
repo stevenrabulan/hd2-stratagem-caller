@@ -84,8 +84,12 @@ The pulsing STRATAGEM CALLER READY text in the Overlay, just right of the game's
 _Avoid_: Banner, title
 
 **Beep**:
-The sound the tool makes when a Trigger Key cannot call its Slot (not callable, unreadable too long, or beyond the end of the menu).
+The sound the tool makes when a Trigger Key cannot call its Slot (not callable, unreadable too long, or beyond the end of the menu): two short tones, each sounding with a red step of the Flash. Pressing the same Trigger Key again starts a new Beep in place of what is left of the old one.
 
 **Flash**:
-A Key Cap turning red three times in about 0.6 s when its Trigger Key earns a Beep. A Slot with no Key Cap only beeps.
+A Key Cap turning red twice in about 0.6 s when its Trigger Key earns a Beep, each red in step with one of the Beep's tones. A Slot with no Key Cap only beeps.
 _Avoid_: Blink, alert
+
+**Tray Icon**:
+The tool's icon in the Windows notification area while it runs: a Key Cap, greyed while paused. Its menu pauses or resumes the tool, opens the log, and quits.
+_Avoid_: System tray, taskbar icon, status icon
