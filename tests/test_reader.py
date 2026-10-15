@@ -49,11 +49,26 @@ def test_partly_entered_code_is_not_read():
     assert read_menu(region).codes == {}
 
 
-def test_icon_is_returned_for_each_readable_slot():
+def test_icon_is_returned_for_each_slot_whose_icon_is_in_place():
     region = cv2.imread(str(FIXTURES / "some_on_cooldown.png"))
     reading = read_menu(region)
-    assert set(reading.icons) == set(reading.codes)
+    # Seven Stratagems are listed; Slots 1-3 and 7 are on cooldown and still show an Icon.
+    assert set(reading.icons) == set(range(1, 8))
     assert all(icon.shape == (86, 86, 3) for icon in reading.icons.values())
+
+
+@pytest.mark.parametrize(
+    "name, slots",
+    [
+        ("open_menu_nothing_callable", range(1, 8)),
+        ("open_menu_only_reinforce", [1]),
+        ("mission_stratagem_inserted", range(1, 9)),
+        ("ping_over_last_arrow", range(1, 7)),
+        ("menu_closed_bright_sky", []),
+    ],
+)
+def test_reading_reports_every_slot_with_an_icon_in_place_callable_or_not(name, slots):
+    assert set(_read(name).icons) == set(slots)
 
 
 def _read(name):

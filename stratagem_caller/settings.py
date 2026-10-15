@@ -20,6 +20,7 @@ class Settings:
     mark_key: str
     keystroke_ms: tuple[int, int]
     direct_key_pause_ms: tuple[int, int]
+    overlay_enabled: bool
 
 
 def load_code_book(path: Path) -> dict[str, str]:
@@ -42,6 +43,13 @@ def resolve_code(value: str, code_book: dict[str, str]) -> str:
         ) from None
 
 
+def _overlay_enabled(raw: dict) -> bool:
+    enabled = raw.get("overlay", {}).get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise SettingsError(f"[overlay] enabled must be true or false, not {enabled!r}")
+    return enabled
+
+
 def load(settings_path: Path, code_book_path: Path) -> Settings:
     with settings_path.open("rb") as f:
         raw = tomllib.load(f)
@@ -62,4 +70,5 @@ def load(settings_path: Path, code_book_path: Path) -> Settings:
         mark_key=raw["mark_key"],
         keystroke_ms=tuple(raw["keystroke_ms"]),
         direct_key_pause_ms=tuple(raw["direct_key_pause_ms"]),
+        overlay_enabled=_overlay_enabled(raw),
     )

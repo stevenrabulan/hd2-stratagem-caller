@@ -4,10 +4,11 @@ A companion tool for Helldivers 2. It reads the Stratagem Menu off the screen an
 
 - **Trigger Keys**: press your Call Key, then a digit while the menu is open, to call the Stratagem in that Slot (1 = top of the menu). Codes are read from the screen, so new or temporary Stratagems work without an update.
 - **Direct Keys**: one key calls one specific Stratagem (for example PageDown for Reinforce), using a Code you configure by name from [codebook.toml](codebook.toml) or write out yourself.
+- **Overlay**: while the tool is ready to act on Trigger Keys (it has seen the menu open), a yellow Key Cap showing each Slot's Trigger Key sits left of that Slot's Icon, in the look of the game's own key hints. Slots on cooldown get one too. The Key Caps hide when a Call starts, when you close the menu with the Call Key, when the game loses focus, when you pause, and when the menu closes. Turn it off with `enabled = false` under `[overlay]` in [settings.toml](settings.toml); Trigger Keys work the same either way.
 
 Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/adr](docs/adr).
 
-**Status:** Trigger Keys and Direct Keys are built. The screen reader is tested against 4K fixtures; sending keys into the game has not been confirmed in a mission yet. The Overlay is not built.
+**Status:** Trigger Keys and Direct Keys are built. The screen reader is tested against 4K fixtures; sending keys into the game has not been confirmed in a mission yet. The Overlay (Key Caps) is built and tested on its drawing and show/hide rules, but has not been confirmed in-game yet.
 
 ## Running
 
@@ -21,7 +22,8 @@ Start it before or during a mission, and leave the terminal open:
 - A low beep means that Slot has no Stratagem you can call right now (cooldown, inbound, or empty).
 - `Ctrl+Alt+P` pauses and resumes. `Ctrl+C` in the terminal quits.
 - `F9` marks something unexpected: it gives a short high beep, writes a `MARK` line to `logs/stratagem_caller.log` with what the tool believed at that moment, and saves the screen regions it read in the last few seconds to `fixtures/raw/marks/`. Press it right after the problem, then share the mark number.
-- Keys, timing and Direct Keys are set in [settings.toml](settings.toml).
+- The Overlay is a click-through window that never takes focus and shows in captures and recordings. Key Caps only appear once the tool has confirmed the menu is open, so they can linger a moment (up to about 0.6 s) after the menu really closes if gunfire was hiding it.
+- Keys, timing, the Overlay and Direct Keys are set in [settings.toml](settings.toml).
 
 Run the tests with:
 
@@ -78,6 +80,7 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 - **A Trigger Key does nothing and the digit switches weapon.** The tool didn't see a callable Stratagem in the menu. Check the window title in `settings.toml` matches the game's exactly, that the Call Key matches your in-game bind, and that your screen is 3840×2160 (other sizes are untested).
 - **The menu opens but the Code isn't typed, or is typed wrong.** Check `[direction_keys]` matches your in-game binds. If only the first direction is lost on a Direct Key, raise `direct_key_pause_ms`. If directions are dropped generally, raise `keystroke_ms`.
 - **A Direct Key closes the menu instead of calling.** The menu was open but the tool wasn't watching it (it was paused, the game had lost focus, or the watch hit its 60 s safety limit). Direct Keys skip the Call Key only while the tool is watching a menu you opened with the Call Key; otherwise they press it first and don't look at the screen.
+- **No Key Caps appear next to the menu.** Check `[overlay] enabled` is `true` in `settings.toml`, that the startup text says the Overlay is `on`, and that the game is in borderless fullscreen (the Overlay has only been tried over borderless fullscreen). A Key Cap only appears once the tool has seen the menu open; if Trigger Keys do nothing either, see the first item. A warning in the terminal and a line in `logs/stratagem_caller.log` say if the Overlay failed to start.
 - **Nothing is sent to the game at all.** The game may be ignoring synthetic keys from a non-elevated process; try running the terminal as administrator.
 - **Screenshots are 2560×1440 on a 4K monitor, or positions are off by a third.** The process is not DPI-aware. Run `tools\capture_fixtures.py --selftest`; it should print your monitor's true pixel size.
 - **Screenshots look washed out or too bright.** HDR. Note it and keep the shots; recognition is meant to rely on shape, not exact colour.

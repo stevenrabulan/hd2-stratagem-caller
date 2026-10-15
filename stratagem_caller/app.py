@@ -18,6 +18,7 @@ import numpy as np  # noqa: E402
 from .arming import ArmingWindow, Kind, Outcome  # noqa: E402
 from .eventlog import EventLog  # noqa: E402
 from .marks import RecentRegions, save_mark  # noqa: E402
+from . import overlay  # noqa: E402
 from .reader import REFERENCE_HEIGHT, read_menu, region_size  # noqa: E402
 from .router import KeyEvent, KeyRouter  # noqa: E402
 from .settings import Settings, load  # noqa: E402
@@ -40,6 +41,7 @@ class App:
         self._log = log
         self.recent = RecentRegions(RECENT_REGIONS)
         self._marks = 0
+        self._quit = threading.Event()  # ends the Overlay's thread
         self.call_key = Key.named(settings.call_key)
         self.direction_keys = {d: Key.named(k) for d, k in settings.direction_keys.items()}
 
@@ -59,6 +61,26 @@ class App:
             is_sending=self._sending.is_set,
             log=log,
         )
+
+    # --- Overlay ---
+
+    def start_overlay(self, monitor: dict) -> None:
+        """Run the Overlay on its own thread, unless the settings turn it off, in which
+        case no window is created."""
+        overlay.start_overlay(
+            enabled=self.settings.overlay_enabled,
+            key_caps=self.router.key_caps,
+            monitor=monitor,
+            stop=self._quit,
+            on_failure=self._overlay_failed,
+        )
+
+    def _overlay_failed(self, error: Exception) -> None:
+        self._log(f"Overlay stopped: {error!r}")
+        print(f"  Warning: the Overlay stopped ({error!r}); Trigger Keys still work.")
+
+    def stop(self) -> None:
+        self._quit.set()
 
     # --- keyboard hook (must return quickly; True lets the key through) ---
 
@@ -220,7 +242,8 @@ def main() -> None:
     log = EventLog(LOG_PATH)
     app = App(settings, log.write)
     with mss.MSS() as sct:
-        height = sct.monitors[1]["height"]
+        monitor = dict(sct.monitors[1])
+    height = monitor["height"]
     print(f"Stratagem Caller running. Screen height {height}.")
     if height != REFERENCE_HEIGHT:
         print(f"  Warning: only tested at {REFERENCE_HEIGHT}; Trigger Keys may not read the menu.")
@@ -229,6 +252,8 @@ def main() -> None:
         print(f"  Direct Key [{key}] -> {code}")
     print(f"  [{settings.pause_key}] pause/resume, [{settings.mark_key}] mark something unexpected, Ctrl+C here to quit")
     print(f"  Logging Trigger Keys and Calls to {LOG_PATH}")
+    print(f"  Overlay (Key Caps beside each Slot while the menu is open): {'on' if settings.overlay_enabled else 'off'}")
+    app.start_overlay(monitor)
     keyboard.hook(app.on_event, suppress=True)
     keyboard.add_hotkey(settings.pause_key, app.toggle_pause)
     keyboard.add_hotkey(settings.mark_key, app.mark)
@@ -237,3 +262,4 @@ def main() -> None:
             time.sleep(1)
     except KeyboardInterrupt:
         pass
+    app.stop()

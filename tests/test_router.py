@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from stratagem_caller.arming import Outcome
@@ -13,6 +14,7 @@ SHIFT = Key("shift", 42, False)
 CALL = Key("b", 48, False)
 ONE = Key("1", 2, False)
 TWO = Key("2", 3, False)
+ZERO = Key("0", 11, False)
 REINFORCE = Key("page down", 81, True)
 TITLE = "HELLDIVERS 2"
 MENU = Reading(codes={1: "DDUR", 2: "DLRDLR"}, menu_open=True)
@@ -40,7 +42,7 @@ class Keyboard:
         self.router = KeyRouter(
             call_key=CALL,
             direct_keys={REINFORCE: "DDDUUR"},
-            trigger_keys={ONE: 1, TWO: 2},
+            trigger_keys={ONE: 1, TWO: 2, ZERO: 10},
             window_title=TITLE,
             clock=lambda: self.now,
             foreground_title=lambda: self.focused,
@@ -525,3 +527,120 @@ def test_direct_key_presses_the_call_key_while_a_call_key_press_is_closing_the_m
     kb.router.offer(window, MENU)
     kb.down(CALL, 2.0)  # closing the open menu
     assert kb.down(REINFORCE, 2.1).direct_presses_call_key
+
+
+# --- Key Caps: what the Overlay should show, by Slot ---
+
+
+def listing(*slots):
+    """A Reading of an open menu listing `slots`, callable or not."""
+    icon = np.zeros((86, 86, 3), np.uint8)
+    return Reading(codes={s: "DDUR" for s in slots if s == 1}, icons={s: icon for s in slots}, menu_open=True)
+
+
+def watching_an_open_menu(*slots):
+    """A Keyboard whose watch has confirmed a menu listing `slots` open."""
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    kb.up(CALL, 0.05)
+    for at in (0.3, 0.35):
+        kb.now = at
+        kb.router.offer(window, listing(*slots))
+    return kb, window
+
+
+def test_key_caps_show_each_listed_slots_trigger_key_name():
+    kb, _ = watching_an_open_menu(1, 2)
+    assert kb.router.key_caps() == {1: "1", 2: "2"}
+
+
+def test_slot_10_shows_the_key_zero():
+    kb, _ = watching_an_open_menu(1, 2, 10)
+    assert kb.router.key_caps() == {1: "1", 2: "2", 10: "0"}
+
+
+def test_slot_without_a_trigger_key_gets_no_key_cap():
+    kb, _ = watching_an_open_menu(1, 2, 3)
+    assert kb.router.key_caps() == {1: "1", 2: "2"}
+
+
+def test_key_cap_names_follow_the_configured_trigger_keys():
+    kb, _ = watching_an_open_menu(1, 2)
+    kb.router.trigger_keys = {Key("f5", 63, False): 1, Key("page down", 81, True): 2}
+    assert kb.router.key_caps() == {1: "f5", 2: "page down"}
+
+
+def test_no_key_caps_before_the_menu_is_confirmed_open():
+    kb = Keyboard()
+    window = kb.down(CALL, 0.0).start_watching
+    assert kb.router.key_caps() == {}
+    kb.now = 0.3
+    kb.router.offer(window, listing(1, 2))
+    assert kb.router.key_caps() == {}
+
+
+def test_no_key_caps_outside_a_watch():
+    assert Keyboard().router.key_caps() == {}
+
+
+def test_key_caps_hide_when_the_game_loses_focus_and_the_watch_ends_with_it():
+    kb, window = watching_an_open_menu(1, 2)
+    kb.focused = "Notepad"
+    assert kb.router.key_caps() == {}
+    outcome = kb.router.offer(window, listing(1, 2))
+    kb.router.finish(window, outcome)
+    kb.focused = TITLE
+    assert kb.router.key_caps() == {}
+
+
+def test_key_caps_hide_when_the_tool_is_paused():
+    kb, window = watching_an_open_menu(1, 2)
+    kb.router.paused = True
+    assert kb.router.key_caps() == {}
+    kb.router.end_watch("paused")
+    kb.router.paused = False
+    assert kb.router.key_caps() == {}
+
+
+def test_key_caps_hide_when_a_call_starts():
+    kb, _ = watching_an_open_menu(1, 2)
+    assert kb.down(ONE, 0.4).outcome == Outcome("call", "DDUR")
+    assert kb.router.key_caps() == {}
+
+
+def test_key_caps_stay_when_a_trigger_key_beeps():
+    kb, _ = watching_an_open_menu(1, 2)
+    assert kb.down(TWO, 1.0).outcome == Outcome("beep")
+    assert kb.router.key_caps() == {1: "1", 2: "2"}
+
+
+def test_key_caps_hide_when_the_call_key_closes_the_menu():
+    kb, _ = watching_an_open_menu(1, 2)
+    kb.down(CALL, 1.0)
+    assert kb.router.key_caps() == {}
+
+
+def test_key_caps_hide_for_a_direct_key():
+    kb, _ = watching_an_open_menu(1, 2)
+    kb.down(REINFORCE, 1.0)
+    assert kb.router.key_caps() == {}
+
+
+def test_key_caps_stay_while_fire_hides_the_menu_and_hide_when_it_is_closed():
+    kb, window = watching_an_open_menu(1, 2)
+    kb.now = 0.4
+    kb.router.offer(window, Reading())
+    assert kb.router.key_caps() == {1: "1", 2: "2"}
+    outcome = None
+    for at in (0.5, 0.6, 0.7, 1.0, 1.1):
+        kb.now = at
+        outcome = kb.router.offer(window, Reading()) or outcome
+    assert outcome == Outcome("closed")
+    kb.router.finish(window, outcome)
+    assert kb.router.key_caps() == {}
+
+
+def test_two_trigger_keys_for_one_slot_show_the_first_in_settings_order():
+    kb, _ = watching_an_open_menu(1)
+    kb.router.trigger_keys = {Key("f5", 63, False): 1, ONE: 1}
+    assert kb.router.key_caps() == {1: "f5"}

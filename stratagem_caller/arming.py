@@ -115,6 +115,8 @@ class ArmingWindow:
         self._previous: Reading | None = None
         self._latest: Reading | None = None
         self._seen_open = False  # confirmed open since the press (and not closing)
+        # The Slots whose Icon was in place when the menu was last confirmed open.
+        self._icon_slots: frozenset[int] = frozenset()
         self._open_since: float | None = None  # start of the current confirmed stretch
         self._not_open_readings = 0
         self._doubt_since: float | None = None  # first of a run of not-open Readings
@@ -126,6 +128,13 @@ class ArmingWindow:
         """Whether the menu is open or opening as far as the tool knows: false once a
         Call is made and while the latest Call Key press is taken as closing it."""
         return not self.done and self._closing_since is None
+
+    def key_cap_slots(self) -> frozenset[int]:
+        """The Slots that show a Key Cap right now: those the menu lists (an Icon in
+        place, callable or not), from the moment the menu is confirmed open, which is
+        also when Trigger Keys start to act. None once the Call Key closes the menu,
+        a Call is made or the watch ends. They stay up while the watch is in doubt."""
+        return self._icon_slots if self._seen_open and not self.done else frozenset()
 
     def press(self, slot: int, now: float) -> Press:
         """A Trigger Key went down."""
@@ -195,6 +204,7 @@ class ArmingWindow:
             self._closing_since = None  # still open: the press did not close it
         if self._closing_since is None:
             self._seen_open = True
+            self._icon_slots = frozenset(self._latest.icons)
             if self._open_since is None:
                 self._open_since = now
 

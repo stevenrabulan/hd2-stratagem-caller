@@ -50,3 +50,9 @@ R = "right"
 # One press opens the menu and calls it. These keys never reach the game.
 [direct_keys]
 "page down" = "Reinforce"
+
+# The Overlay draws a Key Cap beside each Stratagem in the open menu, showing its
+# Trigger Key. Set enabled = false to draw nothing over the game; Trigger Keys work
+# the same either way.
+[overlay]
+enabled = true

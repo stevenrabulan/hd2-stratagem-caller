@@ -1,4 +1,6 @@
-from stratagem_caller.arming import ArmingWindow, Outcome, Press
+import numpy as np
+
+from stratagem_caller.arming import SAFETY_LIMIT, ArmingWindow, Outcome, Press
 from stratagem_caller.reader import Reading
 
 CODES = {1: "DDUR", 2: "DLRDLR", 4: "UUDD"}
@@ -431,3 +433,131 @@ def test_menu_does_not_count_as_shown_once_a_call_is_made():
     s = Script().open_for_a_while()
     s.window.press(1, now=0.31)
     assert not s.window.menu_shown()
+
+
+# --- Key Caps: when they show, and on which Slots ---
+
+ICON = np.zeros((86, 86, 3), np.uint8)
+
+
+def listed(*slots, codes=CODES, menu_open=True):
+    """A Reading of a menu that lists `slots` (an Icon in place at each), callable or not."""
+    return Reading(
+        codes={s: c for s, c in codes.items() if s in slots},
+        icons={s: ICON for s in slots},
+        menu_open=menu_open,
+    )
+
+
+MENU_OF_FOUR = listed(1, 2, 3, 4)  # Slot 3 is on cooldown: no Code, but an Icon
+
+
+def key_cap_script():
+    """A watch that has just confirmed MENU_OF_FOUR open."""
+    s = Script()
+    s.see(MENU_OF_FOUR, 0.25, 0.3)
+    return s
+
+
+def test_key_caps_wait_for_the_menu_to_be_confirmed_open():
+    s = Script()
+    assert s.window.key_cap_slots() == frozenset()
+    s.see(MENU_OF_FOUR, 0.25)
+    assert s.window.key_cap_slots() == frozenset()
+    s.see(MENU_OF_FOUR, 0.3)
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+
+
+def test_key_caps_include_slots_on_cooldown():
+    assert key_cap_script().window.key_cap_slots() == {1, 2, 3, 4}
+    assert 3 not in CODES
+
+
+def test_slot_without_an_icon_in_place_gets_no_key_cap():
+    s = Script()
+    s.see(listed(1, 2), 0.25, 0.3)
+    assert s.window.key_cap_slots() == {1, 2}
+
+
+def test_key_caps_follow_the_slots_the_menu_lists_now():
+    s = key_cap_script()
+    s.see(listed(1, 2, 3, 4, 5, 6), 0.35, 0.4)
+    assert s.window.key_cap_slots() == {1, 2, 3, 4, 5, 6}
+    s.see(listed(1, 2, 3, 4, 5), 0.45, 0.5)
+    assert s.window.key_cap_slots() == {1, 2, 3, 4, 5}
+
+
+def test_key_caps_stay_while_the_menu_is_hidden_behind_fire():
+    s = key_cap_script()
+    assert s.see(CLOSED, 0.4) is None
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+    assert s.see(CLOSED, 0.55) is None
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+
+
+def test_key_caps_come_back_unchanged_when_the_menu_returns_from_hiding():
+    s = key_cap_script()
+    s.see(CLOSED, 0.4)
+    s.see(MENU_OF_FOUR, 0.45)
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+
+
+def test_key_caps_hide_when_the_menu_is_confirmed_closed():
+    s = key_cap_script()
+    outcome, _ = see_until_decided(s, CLOSED, 0.35, stop=3.0)
+    assert outcome == Outcome("closed")
+    assert s.window.key_cap_slots() == frozenset()
+
+
+def test_key_caps_hide_when_a_call_is_made():
+    s = key_cap_script()
+    assert s.window.press(1, now=0.31).outcome == Outcome("call", "DDUR")
+    assert s.window.key_cap_slots() == frozenset()
+
+
+def test_key_caps_hide_when_a_held_key_is_called_on_a_later_reading():
+    s = Script()
+    s.see(MENU_OF_FOUR, 0.25, 0.3)
+    s.see(CLOSED, 0.35)
+    assert s.window.press(2, now=0.4) == Press(True, None)
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+    assert s.see(MENU_OF_FOUR, 0.45) is None
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+    assert s.see(MENU_OF_FOUR, 0.5) == Outcome("call", "DLRDLR")
+    assert s.window.key_cap_slots() == frozenset()
+
+
+def test_key_caps_stay_after_a_beep():
+    s = key_cap_script()
+    assert s.window.press(3, now=1.0) == Press(True, Outcome("beep"))
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+
+
+def test_key_caps_hide_when_the_call_key_closes_the_menu():
+    s = key_cap_script()
+    s.window.restart(1.0)
+    assert s.window.key_cap_slots() == frozenset()
+
+
+def test_key_caps_stay_hidden_after_a_close_until_the_menu_is_confirmed_open_again():
+    s = key_cap_script()
+    s.window.restart(1.0)
+    s.see(MENU_OF_FOUR, 1.02)
+    assert s.window.key_cap_slots() == frozenset()
+    s.see(MENU_OF_FOUR, 1.4, 1.5)  # still open past the closing period: the press did not close it
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+
+
+def test_key_caps_hide_when_the_safety_limit_ends_the_watch():
+    s = key_cap_script()
+    assert s.see(MENU_OF_FOUR, SAFETY_LIMIT) == Outcome("limit")
+    assert s.window.key_cap_slots() == frozenset()
+
+
+def test_key_caps_hide_when_the_call_key_is_pressed_while_the_menu_is_in_doubt():
+    # Fire hides the menu, then the Call Key is pressed: nothing seen so far is trusted.
+    s = key_cap_script()
+    s.see(CLOSED, 0.4)
+    assert s.window.key_cap_slots() == {1, 2, 3, 4}
+    s.window.restart(0.5)
+    assert s.window.key_cap_slots() == frozenset()

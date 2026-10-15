@@ -193,6 +193,26 @@ class KeyRouter:
             text += "; unreadable " + ",".join(str(n) for n in sorted(reading.unreadable))
         return text
 
+    # --- what the Overlay shows ---
+
+    def key_caps(self) -> dict[int, str]:
+        """The Key Caps to show now: Slot -> name of its Trigger Key. A Slot without a
+        Trigger Key gets none. Empty when no watch is running, and at once, without
+        waiting for the watch to notice, when the tool is paused or the game is not
+        focused."""
+        # Asked of Windows outside the lock: this runs many times a second on the
+        # Overlay's thread and the keyboard hook must never wait behind it.
+        if self.paused or self._foreground_title() != self.window_title:
+            return {}
+        with self._lock:
+            window = self._window
+            listed = window.key_cap_slots() if window is not None else frozenset()
+        names: dict[int, str] = {}
+        for key, slot in self.trigger_keys.items():
+            if slot in listed:
+                names.setdefault(slot, key.name)  # two keys for one Slot: the first shown
+        return names
+
     # --- the worker thread's view of the Arming Window ---
 
     def offer(self, window: ArmingWindow, reading: Reading) -> Outcome | None:

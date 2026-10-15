@@ -46,12 +46,16 @@ class Reading:
 
     Each Slot is in one of three states:
 
-    - callable: it appears in `codes` with its full Code (and in `icons`);
+    - callable: it appears in `codes` with its full Code;
     - unreadable: it appears in `unreadable`. Something bright is on its arrow
       line that is not a recognisable arrow at a valid position, so the Code
       cannot be trusted. A shortened Code is never returned for such a Slot;
     - anything else: not callable. The game shows a status such as a cooldown
       timer in place of the arrows, and the Slot is in neither collection.
+
+    `icons` holds the Icon of every Slot whose Icon is in place, callable or
+    not: a Slot on cooldown still shows its Icon. It says which Slots the menu
+    lists, which the Overlay needs, and is empty when no Icon is in place.
 
     `menu_open` says whether the Stratagem Menu is open, whatever the Slots
     are: a menu in which every Stratagem is on cooldown is open with no Codes.
@@ -108,7 +112,6 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
     clutter = is_clutter[labels]
 
     codes = {}
-    icons = {}
     unreadable = set(rejected)
     for slot, arrows in sorted(found.items()):
         if slot in rejected:
@@ -121,26 +124,30 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
         if sorted(arrows) != list(range(len(arrows))):
             continue  # a gap: the player has entered part of the Code by hand
         codes[slot] = "".join(arrows[i] for i in range(len(arrows)))
+
+    in_place = [slot for slot in range(1, MAX_SLOTS + 1) if _icon_in_place(region, slot, scale)]
+    size = round(ICON_SIZE * scale)
+    left = round(ICON_LEFT * scale)
+    icons = {}
+    for slot in in_place:
         top = round((ICON_TOP + (slot - 1) * SLOT_PITCH) * scale)
-        left = round(ICON_LEFT * scale)
-        size = round(ICON_SIZE * scale)
         icons[slot] = region[top : top + size, left : left + size].copy()
     return Reading(
         codes=codes,
         unreadable=unreadable,
         icons=icons,
-        menu_open=_menu_open(region, scale, codes),
+        menu_open=_menu_open(in_place, codes),
     )
 
 
-def _menu_open(region: np.ndarray, scale: float, codes: dict[int, str]) -> bool:
+def _menu_open(in_place: list[int], codes: dict[int, str]) -> bool:
     """An open menu is a column of Icons in their places. Rows that are still
     sliding in have no Icon in place yet, and a closed menu shows at most a few
     separate rows, as they come off cooldown. The only open menu that small is a
     dead player's, which lists Reinforce (Slot 1) alone, with its Code."""
     run = longest = 0
     for slot in range(1, MAX_SLOTS + 1):
-        run = run + 1 if _icon_in_place(region, slot, scale) else 0
+        run = run + 1 if slot in in_place else 0
         longest = max(longest, run)
     return longest >= ICONS_FOR_OPEN_MENU or 1 in codes
 

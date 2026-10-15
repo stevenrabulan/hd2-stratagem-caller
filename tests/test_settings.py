@@ -43,3 +43,30 @@ def test_settings_file_with_the_old_setting_still_loads(tmp_path):
     path = tmp_path / "settings.toml"
     path.write_text(old, encoding="utf-8")
     assert load(path, ROOT / "codebook.toml").call_key == "b"
+
+
+def test_overlay_is_enabled_by_default_in_the_shipped_settings():
+    settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
+    assert settings.overlay_enabled is True
+    assert "[overlay]" in (ROOT / "settings.toml").read_text(encoding="utf-8")
+
+
+def _with_overlay_section(tmp_path, section):
+    """The shipped settings with their [overlay] section (the last one) replaced."""
+    text = (ROOT / "settings.toml").read_text(encoding="utf-8")
+    path = tmp_path / "settings.toml"
+    path.write_text(text[: text.index("[overlay]")] + section, encoding="utf-8")
+    return load(path, ROOT / "codebook.toml")
+
+
+def test_overlay_can_be_turned_off(tmp_path):
+    assert _with_overlay_section(tmp_path, "[overlay]\nenabled = false\n").overlay_enabled is False
+
+
+def test_settings_file_without_an_overlay_section_still_loads_with_the_overlay_on(tmp_path):
+    assert _with_overlay_section(tmp_path, "").overlay_enabled is True
+
+
+def test_overlay_enabled_must_be_true_or_false(tmp_path):
+    with pytest.raises(SettingsError, match="enabled"):
+        _with_overlay_section(tmp_path, '[overlay]\nenabled = "yes"\n')
