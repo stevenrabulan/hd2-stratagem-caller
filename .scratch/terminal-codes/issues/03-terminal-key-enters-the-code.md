@@ -1,0 +1,40 @@
+# 03: The Terminal Key enters the Code
+
+**What to build:** While the Terminal Prompt reads INTERACT, the tool reads the Code on the Terminal's own screen. The Code is drawn at an angle that depends on where the player stands, so the reader finds the arrows, puts them in order along their line, tells each direction despite the skew, and tells directions not yet entered (light grey) from entered ones (yellow). A pink circle or the character's hand may lie across the arrows: the reader either still reads every arrow or reports the Code unreadable, and never returns a shortened Code. Pressing the Terminal Key then types only the directions not yet entered, with the Direction Keys at `keystroke_ms` timing. An unreadable Code beeps, as in ticket 02. No automatic retry: the next press reads afresh. See "Decisions so far" and "What the fixtures show" in the spec.
+
+**Blocked by:** 02
+
+**Status:** resolved
+
+- [x] Every Code frame in `fixtures/terminal/` reads as ← ↑ → → ↓ →, with the right directions marked entered (none, two, five, all six)
+- [x] The frame with the pink circle across an arrow and the frame with a hand over the first arrow give either the full Code or unreadable, never a shortened Code
+- [x] Frames with no Code (walking up, the bar step, the grid step) give no Code
+- [x] The Upload Data log-in screenshot in the spec's folder reads as ↑ ↓ ← ↑ ↓ (a JPEG, used as a check, not as the only proof)
+- [x] Given a read Code, the Terminal Key types only the directions not yet entered, and none when all are entered
+- [x] A Reading of a Terminal costs little enough that the Terminal Key does not feel delayed (measure it and note the number)
+- [x] (player) In-game at a drill Terminal: `1` enters the Code; after typing two directions by hand, `1` finishes it
+
+## Comments
+
+**Hand-back (2026-10-15).** Everything except the in-game box is done and tested (502 tests pass, up from 456; no test plays a tone, hooks the keyboard, sends a key or shows a window). Not checked: the real game. The reader has seen 8 fixtures (one Prospecting Drill Terminal) and one Steam JPEG (an Upload Data Terminal), both 3840x2160; `1` at a Terminal has not been pressed in a mission.
+
+What was built:
+- `terminal_code.py` (new): `read_terminal_code(region, screen_height)` returns a `CodeReading` (`status` NONE / UNREADABLE / READ, `code` as U D L R, `entered` count, `remaining`, `why` in words). `code_area(monitor)` is the strip read: the middle 1840x1040 of a 4K screen (the reticle is on the Terminal, and the arrows sit within about 300 px of the centre in every frame), scaled by height. Ticket 04 can ask `status is READ` for "a Code is readable".
+- How it reads: colour mask (light grey = not entered, yellow or pale yellow = entered), thin things (the reticle's pale ring, letters, lines) opened away, blobs of arrow size on one straight line, in order along it. Each arrow is fitted to a canonical arrow by an affine map (second moments, then a search over the one angle left, ignoring pink and white pixels); the map's image of "tip" and of "down", compared with the row's line, gives left/right (tip along the row) or up/down (the arrow's own down along the row). So direction is told despite the skew with no hand-tuned angle limits. Entered arrows must be a prefix of the row.
+- Never a shortened Code: unreadable if the gap between arrows is uneven (one hidden), a bright stub lies where the next arrow would be at either end (the hand frame: a yellow sliver of the first arrow), something bright of any size lies between arrows, the next arrow would fall outside the strip, an arrow does not match the glyph (overlap under 0.7; clear arrows score 0.87 to 0.91, the one the reticle partly covers 0.78), a direction is ambiguous, or the row tilts more than 60 degrees. Fewer than 3 arrows in a row: NONE.
+- `app.py`: `_enter_code` now reads once (grab the strip, read) and types `remaining` with the Direction Keys at `keystroke_ms` (`_tap_code`, stopping on pause), under the send guard (`sends=True`). Unreadable or no Code: log `Terminal Key: Code unreadable, <why>` and `DoubleBeep` (tones only; the Key Cap flash is ticket 04). All entered: logs `nothing left to type`, no beep. A reading that raises is logged, beeps, and propagates to the thread hook.
+- `router.py`: new optional `is_entering_code`. While a Terminal Key press is being read and typed, a second press (and its release) is swallowed too. Without this, flipping to `sends=True` would have let a second `1` through to the game as a weapon switch (the send guard passes every key). Log: `terminal key 1: swallowed, a Code is being entered`.
+- README and `settings.toml` comment updated. Tests: `test_terminal_code.py` (35), more in `test_app.py` and `test_router_terminal.py`. To add a fixture (ticket 05), add one line to `CODES` or `NO_CODE` in `test_terminal_code.py`.
+
+Cost (measured, 4K, this machine): the grab of the strip about 14 ms, the read 16 to 19 ms with nothing on screen and about 25 ms with a Code (it works on a copy shrunk to 1080 high; the first version took 85 ms at full size). So about 40 ms from press to first key, well under one keystroke gap (31 to 62 ms plus the same hold); the first key is typed about as soon as it would be for a Direct Key.
+
+Calls I made without asking:
+- **Box 1 ("every Code frame ... none, two, five, all six")**: ticked, with this caveat. The only "five entered" real frame is the hand frame, and the reader calls it UNREADABLE (box 2 allows that): the first arrow is a yellow sliver and reading a direction from a sliver is a guess. Pending, two entered (both angles, one with the pink circle across the 5th arrow, which reads whole), all six (fading), and the JPEG read right. "Five entered" itself is tested on a SYNTHETIC frame (the pending frame with its first five arrows recoloured yellow). If you want the hand frame read in full, say so; it would need a rule like "a sliver at the first position counts as the same state as its neighbour", which I judged unsafe.
+- Synthetic frames (not real ones) underpin: the arrow-hidden-in-the-middle, a pink bar cutting an arrow, the stub after the last arrow, and the rotate/shear/scale sweeps. A 1980-frame sweep (rotation -60 to 60 degrees, shear +/-0.5, scale 0.7 to 1.3 over 4 frames) gave 389 correct reads, 0 wrong and 0 shortened; the rest were unreadable or no Code, as designed. The test suite runs a smaller sweep.
+- Arrow colours are measured on one planet's Terminal (red-lit) and one JPEG. A Terminal with a different colour scheme (or colour-blind HUD settings) may read as no Code; ticket 05 frames will show.
+- Known blind spot: an end arrow hidden so completely that nothing of it shows (no stub) cannot be seen, so a hand fully over the first or last arrow would give a shortened Code. In the one hand frame we have, a sliver shows, and it is caught.
+- Minimum Code length 3 arrows (below that: no Code). Unknown if any Terminal asks for fewer.
+- The search is the middle of the screen only, and the reader gives up (unreadable) if the Code reaches the strip's edge.
+- Reading is on press only (no continuous reading), as the ticket says. Ticket 04 will need a polling loop; `read_terminal_code` is pure and 25 ms, so ticket 04 can call it from the existing Terminal watch worker at a lower rate than the prompt reads.
+
+For Steven to verify in-game (the last box): at a drill Terminal press `E`, then `1`: the Code is typed. Press `E`, type two directions by hand, then `1`: only the rest is typed. Press `1` with the pink circle or your hand across the arrows: a double beep, nothing typed, and the log says why; press `1` again after moving it. Press `1` twice quickly: one Code, no weapon switch. At a step with no Code (bar, grid): beep for the bar step, the grid step is `MOVE CURSOR` so `1` is a weapon switch as before. Check the log lines `Terminal Key: Code LURRDR, 2 entered, typing RRDR (read in N ms)`. If a read is wrong or unreadable when it should not be, press F9 at that moment: the mark saves the menu strip, not the Code strip, so also take a screenshot (the Code strip is not yet saved by marks).

@@ -1,7 +1,8 @@
-"""Collect true-pixel screenshots of the Stratagem Menu to use as test fixtures.
+"""Collect true-pixel screenshots of the Stratagem Menu and of Terminals to use as
+test fixtures.
 
-Run it, play a mission, and every press of the Call Key saves a short burst of
-screenshots to fixtures/raw/. Nothing is sent to the game.
+Run it, play a mission, and every press of the Call Key or the Use Key saves a short
+burst of screenshots to fixtures/raw/. Nothing is sent to the game.
 
     .venv\\Scripts\\python.exe tools\\capture_fixtures.py
     .venv\\Scripts\\python.exe tools\\capture_fixtures.py --selftest
@@ -22,17 +23,15 @@ import keyboard  # noqa: E402
 import mss  # noqa: E402
 import mss.tools  # noqa: E402
 
+from burst_plan import CALL_KEY_BURST, USE_KEY_BURST, BurstKind, BurstTrigger  # noqa: E402
+
 CALL_KEY = "b"
+USE_KEY = "e"
 MANUAL_KEY = "f9"
 QUIT_KEY = "ctrl+alt+q"
-# Several shots per press, so the fixtures show how long the menu takes to open.
-DELAYS_MS = (100, 250, 500)
-
 OUT_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "raw"
 LOG_PATH = OUT_DIR / "captures.log"
 
-_press_count = 0
-_call_key_down = False
 _lock = threading.Lock()
 
 
@@ -44,7 +43,7 @@ def foreground_title() -> str:
     return buf.value
 
 
-def capture_burst(label: str, delays_ms: tuple[int, ...]) -> None:
+def capture_burst(kind: BurstKind, label: str, delays_ms: tuple[int, ...]) -> None:
     title = foreground_title()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     started = time.perf_counter()
@@ -59,7 +58,7 @@ def capture_burst(label: str, delays_ms: tuple[int, ...]) -> None:
             shots.append((delay, sct.grab(monitor)))
     # Encode after the whole burst: a 4K PNG takes long enough to skew the timings.
     for delay, shot in shots:
-        path = OUT_DIR / f"{stamp}_{label}_{delay:03d}ms.png"
+        path = OUT_DIR / kind.filename(stamp, label, delay)
         mss.tools.to_png(shot.rgb, shot.size, output=str(path))
         line = f"{path.name}\t{shot.size[0]}x{shot.size[1]}\tforeground={title!r}"
         with _lock, LOG_PATH.open("a", encoding="utf-8") as log:
@@ -67,24 +66,21 @@ def capture_burst(label: str, delays_ms: tuple[int, ...]) -> None:
         print("saved", line)
 
 
-def on_call_key_down(_event) -> None:
-    global _press_count, _call_key_down
-    if _call_key_down:  # held key auto-repeating
-        return
-    _call_key_down = True
-    _press_count += 1
-    label = f"press{_press_count:03d}"
-    threading.Thread(target=capture_burst, args=(label, DELAYS_MS), daemon=True).start()
+def hook_burst_key(key: str, kind: BurstKind) -> None:
+    trigger = BurstTrigger(kind)
 
+    def on_down(_event) -> None:
+        label = trigger.key_down()
+        if label is not None:  # None: a held key auto-repeating
+            threading.Thread(target=capture_burst, args=(kind, label, kind.delays_ms), daemon=True).start()
 
-def on_call_key_up(_event) -> None:
-    global _call_key_down
-    _call_key_down = False
+    keyboard.on_press_key(key, on_down)
+    keyboard.on_release_key(key, lambda _event: trigger.key_up())
 
 
 def on_manual_key(_event) -> None:
     label = f"manual{datetime.now().strftime('%f')[:3]}"
-    threading.Thread(target=capture_burst, args=(label, (0,)), daemon=True).start()
+    threading.Thread(target=capture_burst, args=(CALL_KEY_BURST, label, (0,)), daemon=True).start()
 
 
 def selftest() -> None:
@@ -103,9 +99,11 @@ def main() -> None:
         monitor = sct.monitors[1]
     print(f"primary monitor: {monitor['width']}x{monitor['height']}")
     print(f"saving to {OUT_DIR}")
-    print(f"[{CALL_KEY}] burst at {DELAYS_MS} ms   [{MANUAL_KEY}] single shot   [{QUIT_KEY}] quit")
-    keyboard.on_press_key(CALL_KEY, on_call_key_down)
-    keyboard.on_release_key(CALL_KEY, on_call_key_up)
+    print(f"[{CALL_KEY}] Call Key burst at {CALL_KEY_BURST.delays_ms} ms")
+    print(f"[{USE_KEY}] Use Key burst at {USE_KEY_BURST.delays_ms} ms (held key = one burst)")
+    print(f"[{MANUAL_KEY}] single shot   [{QUIT_KEY}] quit")
+    hook_burst_key(CALL_KEY, CALL_KEY_BURST)
+    hook_burst_key(USE_KEY, USE_KEY_BURST)
     keyboard.on_press_key(MANUAL_KEY, on_manual_key)
     keyboard.wait(QUIT_KEY)
 

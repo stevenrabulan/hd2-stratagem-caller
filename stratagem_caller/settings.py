@@ -12,14 +12,17 @@ class SettingsError(Exception):
 @dataclass(frozen=True)
 class Settings:
     call_key: str
+    use_key: str
+    terminal_key: str
     direction_keys: dict[str, str]  # "U"/"D"/"L"/"R" -> key name
     trigger_keys: dict[str, int]  # key name -> Slot
     direct_keys: dict[str, str]  # key name -> Code
     window_title: str
     pause_key: str
-    arming_window_ms: int
+    mark_key: str
     keystroke_ms: tuple[int, int]
     direct_key_pause_ms: tuple[int, int]
+    overlay_enabled: bool
 
 
 def load_code_book(path: Path) -> dict[str, str]:
@@ -42,6 +45,20 @@ def resolve_code(value: str, code_book: dict[str, str]) -> str:
         ) from None
 
 
+def _overlay_enabled(raw: dict) -> bool:
+    enabled = raw.get("overlay", {}).get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise SettingsError(f"[overlay] enabled must be true or false, not {enabled!r}")
+    return enabled
+
+
+def _key_name(raw: dict, name: str, default: str) -> str:
+    value = raw.get(name, default)
+    if not isinstance(value, str) or not value:
+        raise SettingsError(f"{name} must be a key name such as {default!r}, not {value!r}")
+    return value
+
+
 def load(settings_path: Path, code_book_path: Path) -> Settings:
     with settings_path.open("rb") as f:
         raw = tomllib.load(f)
@@ -49,8 +66,14 @@ def load(settings_path: Path, code_book_path: Path) -> Settings:
     directions = raw["direction_keys"]
     if set(directions) != set("UDLR"):
         raise SettingsError("[direction_keys] needs exactly U, D, L and R")
+    use_key = _key_name(raw, "use_key", "e")
+    terminal_key = _key_name(raw, "terminal_key", "1")
+    if use_key.lower() == terminal_key.lower():
+        raise SettingsError(f"use_key and terminal_key must be different keys, both are {use_key!r}")
     return Settings(
         call_key=raw["call_key"],
+        use_key=use_key,
+        terminal_key=terminal_key,
         direction_keys=dict(directions),
         trigger_keys={key: int(slot) for key, slot in raw["trigger_keys"].items()},
         direct_keys={
@@ -59,7 +82,8 @@ def load(settings_path: Path, code_book_path: Path) -> Settings:
         },
         window_title=raw["window_title"],
         pause_key=raw["pause_key"],
-        arming_window_ms=int(raw["arming_window_ms"]),
+        mark_key=raw["mark_key"],
         keystroke_ms=tuple(raw["keystroke_ms"]),
         direct_key_pause_ms=tuple(raw["direct_key_pause_ms"]),
+        overlay_enabled=_overlay_enabled(raw),
     )

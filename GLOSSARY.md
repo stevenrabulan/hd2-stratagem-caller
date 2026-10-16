@@ -17,12 +17,12 @@ A position in the Stratagem Menu counted from the top, starting at 1. A Slot is 
 _Avoid_: Row, index, stratagem number
 
 **Code**:
-The ordered sequence of directions the game requires to call a Stratagem.
+The ordered sequence of directions the game requires to call a Stratagem or to operate a Terminal.
 _Avoid_: Key code, combo, arrow sequence
 
 **Reading**:
-The Codes and Icons the tool observed in the Stratagem Menu at one moment.
-_Avoid_: Scan, screenshot, capture
+What the tool observed on screen at one moment: the Codes and Icons in the Stratagem Menu, or the Code a Terminal is showing.
+_Avoid_: Scan, screenshot, capture, OCR
 
 **Icon**:
 The picture the game shows beside a Stratagem in the Stratagem Menu.
@@ -36,7 +36,7 @@ The four keys the player has bound in-game to enter the directions of a Code.
 _Avoid_: Arrow keys, stratagem arrows
 
 **Trigger Key**:
-A key that chooses a Slot when pressed inside the Arming Window, after the player has pressed the Call Key themselves. Digits by default.
+A key that chooses a Slot when pressed while the Stratagem Menu is open (inside the Arming Window), after the player has pressed the Call Key themselves. Digits by default.
 _Avoid_: Hotkey, number key, bind
 
 **Direct Key**:
@@ -48,12 +48,48 @@ The editable list of known Stratagem names and their Codes that Direct Keys can 
 _Avoid_: Hardcoded list, database, table
 
 **Arming Window**:
-The one second after the Call Key is pressed during which a Trigger Key is acted on. Outside it, Trigger Keys behave as ordinary keys.
-_Avoid_: Timeout, listen window
+The time from when the tool confirms the Stratagem Menu is open after a Call Key press until it confirms the menu has closed, however long that is, and so acts on Trigger Keys. Outside it, Trigger Keys behave as ordinary keys.
+_Avoid_: Timeout, listen window, one-second window
 
 **Call**:
 Entering a Slot's Code on the player's behalf.
 _Avoid_: Cast, fire, macro
 
+**Terminal**:
+A mission object that asks the player for a Code after they press the Use Key at it, such as the extraction terminal.
+_Avoid_: Console, mission terminal
+
+**Use Key**:
+The key the player has bound in-game to interact with objects. E by default.
+_Avoid_: Interact key, "E"
+
+**Terminal Key**:
+A key that enters the Code a Terminal is showing, on the player's behalf. 1 by default. While no Terminal's Code is read, the same key does whatever it otherwise would.
+_Avoid_: Enter key, return key
+
+**Terminal Prompt**:
+The game's prompt at the bottom centre of the screen showing the Direction Keys while a Terminal waits for input: INTERACT when it wants a Code, MOVE CURSOR for a grid.
+_Avoid_: HUD prompt, interact prompt
+
 **Overlay**:
-An optional on-screen display showing which Icon belongs to which Trigger Key.
+A display the tool draws over the game, showing Key Caps and the Ready Heading.
+_Avoid_: HUD, window
+
+**Key Cap**:
+A drawing of a key in the Overlay, placed beside the thing that key acts on, such as a Trigger Key beside its Slot, or the Terminal Key (followed by ENTER CODE) beside the Terminal Prompt while a Code is read.
+_Avoid_: Badge, label, key hint
+
+**Ready Heading**:
+The pulsing STRATAGEM CALLER READY text in the Overlay, just right of the game's STRATAGEMS header. It shows and hides at exactly the moments the Slots' Key Caps do (not the Terminal Key's).
+_Avoid_: Banner, title
+
+**Beep**:
+The sound the tool makes when a Trigger Key cannot call its Slot (not callable, unreadable too long, or beyond the end of the menu): two short tones, each sounding with a red step of the Flash. Pressing the same Trigger Key again starts a new Beep in place of what is left of the old one.
+
+**Flash**:
+A Key Cap turning red twice in about 0.6 s when its Trigger Key earns a Beep, each red in step with one of the Beep's tones. A Slot with no Key Cap only beeps. The Terminal Key's Key Cap flashes the same way when the Terminal Key beeps because no Code can be read; with no Key Cap up, it appears for each red step.
+_Avoid_: Blink, alert
+
+**Tray Icon**:
+The tool's icon in the Windows notification area while it runs: a Key Cap, greyed while paused. Its menu pauses or resumes the tool, opens the log, and quits.
+_Avoid_: System tray, taskbar icon, status icon
