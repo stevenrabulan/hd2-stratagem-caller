@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] The Key Cap icon file is in the repo and the Tray Icon uses it
 - [x] Running from a terminal shows the Tray Icon; its tooltip says Running
@@ -12,7 +12,7 @@
 - [x] Open log opens the event log
 - [x] Quit and Ctrl+C both end the tool cleanly: no Tray Icon, no Overlay, no keyboard hook left behind
 - [x] pystray and Pillow are in the requirements; the existing tests still pass
-- [ ] (player) Checked on Windows: every menu item works while the game is running
+- [x] (player) Checked on Windows: every menu item works while the game is running
 
 ## Comments
 

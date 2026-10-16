@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] The Terminal Prompt is recognised as INTERACT, MOVE CURSOR or absent on every frame in `fixtures/terminal/` (the crop origin is in its README)
 - [x] Given scripted Terminal Prompt readings and key presses: the watch starts on the Use Key, gives up after 5 s with no Terminal Prompt, lasts while one shows, and ends about 1 s after it goes, on focus loss, on pause and at a safety limit
@@ -12,7 +12,7 @@
 - [x] With no Terminal Prompt, or MOVE CURSOR, the Terminal Key behaves as before (Trigger Key inside the Arming Window, otherwise passed to the game)
 - [x] The log records the watch starting and ending and each Terminal Key decision
 - [x] `settings.toml`, the settings loader and the README cover `use_key` and `terminal_key`
-- [ ] (player) In-game: at a Terminal `1` beeps instead of switching weapon; away from one it switches weapon; with the Stratagem Menu open it calls Slot 1
+- [x] (player) In-game: at a Terminal `1` beeps instead of switching weapon; away from one it switches weapon; with the Stratagem Menu open it calls Slot 1
 
 ## Comments
 

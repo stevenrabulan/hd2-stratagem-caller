@@ -4,14 +4,14 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] A claim succeeds when nothing holds the lock
 - [x] A second claim fails while the first is held
 - [x] A claim succeeds again after the first is released
 - [x] A second launch shows the "already running" notification, beeps once, and exits before hooking the keyboard
 - [x] A launch after Quit, or after the process was killed, starts normally
-- [ ] (player) Checked on Windows: double-clicking the shortcut twice leaves one Tray Icon, and a Call is typed once
+- [x] (player) Checked on Windows: double-clicking the shortcut twice leaves one Tray Icon, and a Call is typed once
 
 ## Comments
 

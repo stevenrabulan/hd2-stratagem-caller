@@ -4,12 +4,12 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Given scripted readings, the Key Cap shows exactly while a Code is read, and flashes on an unreadable-Code beep
 - [x] The Key Cap shows the configured Terminal Key's name
 - [x] Painting the Key Cap onto every Terminal fixture (normal and red) leaves the Terminal Prompt and Code readings unchanged
-- [ ] (player) In-game: the Key Cap appears beside INTERACT at a drill Terminal and goes once the Code is entered
+- [x] (player) In-game: the Key Cap appears beside INTERACT at a drill Terminal and goes once the Code is entered
 
 ## Comments
 
@@ -35,3 +35,5 @@ Calls I made without asking:
 - The Key Cap drawing has some edge pixels whose colour exceeds their alpha (the existing Slot caps do too, 94 pixels; the new one 46); I left that as is.
 
 For Steven to verify in-game (the last box, left unticked): at a drill Terminal press `E`; within about a second of the Code appearing a yellow `1` Key Cap with ENTER CODE shows to the right of the INTERACT prompt. Type the whole Code by hand: it goes. At the CONFIRM DRILL POSITION grid (MOVE CURSOR) and the bar step it is not there. Put your hand or the pink circle over an arrow and press `1`: the Key Cap flashes red twice with the two tones (it may be absent before the press). Press `Call Key` at a Terminal: Slot Key Caps show and the ENTER CODE one does not. Pause (`Ctrl+Alt+P`) and alt-tab: it goes at once. Log lines to look for: `Terminal Key Cap shown: Code LURRDR, 2 entered` and `Terminal Key Cap hidden: ...` with the reason. If the game dips in frame rate at a Terminal, the 4 a second Code reading is the first suspect: raise `CODE_READING_INTERVAL`.
+
+**In-game check (2026-10-16).** Passed. One finding: the Key Cap blinked too briefly to see well. The log showed why: single unreadable or no-Code readings hid it for 0.2 to 0.7 s at a time. Fixed: a Code with directions left is now held through such readings for `CODE_HOLD` (0.75 s), and the Key Cap blinks on purpose, on for 0.96 s and off for 0.24 s (off is 25% of on), from the moment the Code is first read. Red flash steps still show at any point in the blink. Not yet seen in-game.

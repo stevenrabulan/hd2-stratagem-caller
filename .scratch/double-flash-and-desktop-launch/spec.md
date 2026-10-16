@@ -1,6 +1,6 @@
 # A missed Trigger Key flashes and beeps twice in step; the tool starts from a desktop shortcut
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

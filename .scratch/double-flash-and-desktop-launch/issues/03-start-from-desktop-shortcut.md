@@ -4,15 +4,15 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-human
+**Status:** resolved
 
-- [ ] The tools script creates the Stratagem Caller desktop shortcut and replaces an existing one; it has been run once
-- [ ] Double-clicking the shortcut opens no terminal window and shows the Tray Icon
+- [x] The tools script creates the Stratagem Caller desktop shortcut and replaces an existing one; it has been run once
+- [x] Double-clicking the shortcut opens no terminal window and shows the Tray Icon
 - [x] A "running" notification names the Call Key
 - [x] Startup warnings show as notifications; with no console, the startup lines are in the event log
 - [x] An unexpected error writes its traceback to the event log, shows the stopped notification, and removes the Tray Icon
 - [x] The README's Running section covers the shortcut, the Tray Icon, the script and the administrator fix
-- [ ] (player) Confirmed in-game: started from the shortcut, Trigger Keys and Direct Keys reach the game
+- [x] (player) Confirmed in-game: started from the shortcut, Trigger Keys and Direct Keys reach the game
 
 ## Comments
 

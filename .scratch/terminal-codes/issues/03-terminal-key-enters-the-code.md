@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Every Code frame in `fixtures/terminal/` reads as ← ↑ → → ↓ →, with the right directions marked entered (none, two, five, all six)
 - [x] The frame with the pink circle across an arrow and the frame with a hand over the first arrow give either the full Code or unreadable, never a shortened Code
@@ -12,7 +12,7 @@
 - [x] The Upload Data log-in screenshot in the spec's folder reads as ↑ ↓ ← ↑ ↓ (a JPEG, used as a check, not as the only proof)
 - [x] Given a read Code, the Terminal Key types only the directions not yet entered, and none when all are entered
 - [x] A Reading of a Terminal costs little enough that the Terminal Key does not feel delayed (measure it and note the number)
-- [ ] (player) In-game at a drill Terminal: `1` enters the Code; after typing two directions by hand, `1` finishes it
+- [x] (player) In-game at a drill Terminal: `1` enters the Code; after typing two directions by hand, `1` finishes it
 
 ## Comments
 

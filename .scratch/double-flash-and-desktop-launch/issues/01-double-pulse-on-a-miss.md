@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] The flash is red, normal, red, normal, then stays normal, with steps changing at multiples of 0.15 s (float-error guard kept)
 - [x] The flash module says a Beep's tones start at 0 s and 0.3 s, and at no other time
@@ -12,7 +12,7 @@
 - [x] Every kind of Beep plays both tones, on a thread that never holds up the keyboard hook or the reading loop
 - [x] A Beep that is no longer the latest one drops its second tone
 - [x] The README's Overlay text says two reds in step with two tones
-- [ ] (player) Confirmed in-game: pressing a Slot on cooldown gives two reds in step with two tones; pressing it twice quickly never gives more than two tones in a row
+- [x] (player) Confirmed in-game: pressing a Slot on cooldown gives two reds in step with two tones; pressing it twice quickly never gives more than two tones in a row
 
 ## Comments
 
