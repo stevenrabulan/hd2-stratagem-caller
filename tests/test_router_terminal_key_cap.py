@@ -5,7 +5,9 @@ from test_router import CALL, ONE, RETURN, TITLE, USE
 from test_router_terminal import INTERACT, MOVE, NONE, log_has, show, terminal_waiting
 
 from stratagem_caller.keycaps import TerminalKeyCap
+from stratagem_caller.router import TERMINAL_CAP_OFF, TERMINAL_CAP_ON
 from stratagem_caller.terminal_code import CodeReading, CodeStatus
+from stratagem_caller.terminal_watch import CODE_HOLD
 
 CODE = CodeReading(CodeStatus.READ, "LURRDR", 2, why="6 arrows")
 NOTHING_ENTERED = CodeReading(CodeStatus.READ, "LURRDR", 0, why="6 arrows")
@@ -60,13 +62,49 @@ def test_the_key_cap_goes_when_the_code_is_entered():
     assert key_cap(kb) is None
 
 
-def test_the_key_cap_goes_when_the_code_stops_being_readable_and_returns_when_it_can_be_read_again():
+def test_the_key_cap_stays_through_a_moment_the_code_cannot_be_read():
     kb, watch = terminal_waiting(INTERACT)
     read(kb, watch, CODE, 1.1)
-    read(kb, watch, UNREADABLE, 1.4)
-    assert key_cap(kb) is None
-    read(kb, watch, CODE, 1.7)
+    read(kb, watch, UNREADABLE, 1.35)  # a hand over an arrow for a reading or two
+    read(kb, watch, NO_CODE, 1.6)
     assert key_cap(kb) == TerminalKeyCap("1")
+
+
+def test_the_key_cap_goes_when_the_code_stays_unreadable_and_returns_when_it_can_be_read_again():
+    kb, watch = terminal_waiting(INTERACT)
+    read(kb, watch, CODE, 1.1)
+    read(kb, watch, UNREADABLE, 1.1 + CODE_HOLD)
+    assert key_cap(kb) is None
+    read(kb, watch, CODE, 2.1)
+    assert key_cap(kb) == TerminalKeyCap("1")
+
+
+def test_the_key_cap_blinks_off_for_a_quarter_as_long_as_it_shows():
+    assert TERMINAL_CAP_OFF == pytest.approx(TERMINAL_CAP_ON / 4)
+    kb, watch = terminal_waiting(INTERACT)
+    read(kb, watch, CODE, 1.0)  # the blink counts from the first reading of the Code
+    period = TERMINAL_CAP_ON + TERMINAL_CAP_OFF
+    for start in (1.0, 1.0 + period):
+        for at, shown in [(0.0, True), (TERMINAL_CAP_ON - 0.01, True), (TERMINAL_CAP_ON + 0.01, False), (period - 0.01, False)]:
+            kb.now = start + at
+            read(kb, watch, CODE, kb.now)  # fresh readings do not restart the blink
+            assert (key_cap(kb) is not None) == shown, (start, at)
+
+
+def test_the_blink_starts_afresh_for_a_code_read_again_after_it_went():
+    kb, watch = terminal_waiting(INTERACT)
+    read(kb, watch, CODE, 1.0)
+    read(kb, watch, ALL_ENTERED, 1.25)
+    read(kb, watch, CODE, 1.0 + TERMINAL_CAP_ON + 0.05)  # would be in the off part of the first blink
+    assert key_cap(kb) == TerminalKeyCap("1")
+
+
+def test_the_red_steps_of_a_flash_show_even_in_the_off_part_of_the_blink():
+    kb, watch = terminal_waiting(INTERACT)
+    read(kb, watch, CODE, 1.0)
+    kb.now = 1.0 + TERMINAL_CAP_ON + 0.01
+    flash(kb)
+    assert key_cap(kb) == TerminalKeyCap("1", red=True)
 
 
 @pytest.mark.parametrize("prompt", [NONE, MOVE], ids=["no prompt", "move cursor"])
@@ -248,7 +286,7 @@ def test_the_log_says_when_the_key_cap_appears_and_goes_and_why():
     assert log_has(kb, "Terminal Key Cap hidden: Code LURRDR, all entered")
     read(kb, watch, UNREADABLE, 2.0)
     read(kb, watch, CODE, 2.3)
-    read(kb, watch, UNREADABLE, 2.6)
+    read(kb, watch, UNREADABLE, 2.3 + CODE_HOLD)
     assert log_has(kb, "Terminal Key Cap hidden: a Code that cannot be read, the arrows are unevenly spaced")
 
 

@@ -11,7 +11,7 @@ from .keycaps import TerminalKeyCap
 from .reader import Reading
 from .terminal_code import CodeReading, CodeStatus
 from .terminal_prompt import TerminalPrompt
-from .terminal_watch import TerminalWatch
+from .terminal_watch import TerminalWatch, code_waits
 
 if TYPE_CHECKING:
     from .winkeys import Key
@@ -20,6 +20,9 @@ Ident = tuple[int, bool]  # scan code, is keypad
 
 # Longest gap between key-downs that can still be one held key auto-repeating.
 REPEAT_GAP = 1.0
+# While a Code waits, the Terminal Key's Key Cap blinks: on this long, then off a quarter as long.
+TERMINAL_CAP_ON = 0.96
+TERMINAL_CAP_OFF = TERMINAL_CAP_ON / 4
 
 
 @dataclass(frozen=True)
@@ -186,7 +189,7 @@ class KeyRouter:
         else:
             self._swallowed.add(ident)
             with self._lock:
-                watch.code = None  # the Code is about to change under the tool's own typing
+                watch.drop_code()  # the Code is about to change under the tool's own typing
             self._log(f"terminal key {self.terminal_key.name}: swallowed, {_describe_prompt(prompt)}")
             return Decision(False, enter_code=True)
         self._log(f"terminal key {self.terminal_key.name}: not swallowed, {why}")
@@ -299,7 +302,8 @@ class KeyRouter:
         reads INTERACT, the Stratagem Menu is not being watched (there the key is a Trigger Key),
         the tool is not typing, the game is focused and the tool is not paused. During a flash it
         shows red in each red step, whether or not a Code is read: that is how the player is told
-        the Terminal Key beeped for want of a Code."""
+        the Terminal Key beeped for want of a Code. Otherwise it blinks, on for TERMINAL_CAP_ON and off
+        for TERMINAL_CAP_OFF, from the moment the Code is first read."""
         # Asked of Windows outside the lock, as key_caps does.
         if self.paused or self._foreground_title() != self.window_title:
             return None
@@ -309,8 +313,9 @@ class KeyRouter:
                 return None
             if window is not None and not window.done:
                 return None
-            red = self._terminal_flash is not None and is_red(self._terminal_flash, self._clock())
-            waiting = _code_waits(watch.code)
+            now = self._clock()
+            red = self._terminal_flash is not None and is_red(self._terminal_flash, now)
+            waiting = code_waits(watch.code) and _blink_on(now - watch.code_waits_since)
         if red or (waiting and not self._is_entering_code()):
             return TerminalKeyCap(self.terminal_key.name, red)
         return None
@@ -385,14 +390,14 @@ class KeyRouter:
         with self._lock:
             if self._terminal is not watch:
                 return
-            had_cap = _code_waits(watch.code)
+            had_cap = code_waits(watch.code)
             if self._foreground_title() != self.window_title:
                 reason = "game window lost focus"
             else:
                 reason = watch.offer(prompt, self._clock())
             if reason is not None:
                 self._terminal = None
-            lost_cap = had_cap and not _code_waits(watch.code)
+            lost_cap = had_cap and not code_waits(watch.code)
         if lost_cap:
             self._log(f"Terminal Key Cap hidden: {_describe_prompt(prompt)}")
         if reason is not None:
@@ -404,9 +409,9 @@ class KeyRouter:
         with self._lock:
             if self._terminal is not watch or self._is_entering_code():
                 return
-            before = _code_waits(watch.code)
-            watch.offer_code(reading)
-            after = _code_waits(watch.code)
+            before = code_waits(watch.code)
+            watch.offer_code(reading, self._clock())
+            after = code_waits(watch.code)
         if after and not before:
             self._log(f"Terminal Key Cap shown: Code {reading.code}, {reading.entered} entered")
         elif before and not after:
@@ -432,9 +437,9 @@ class KeyRouter:
 
 
 
-def _code_waits(reading: CodeReading | None) -> bool:
-    """Whether `reading` is a Code read in full with directions still to enter."""
-    return reading is not None and reading.status is CodeStatus.READ and bool(reading.remaining)
+def _blink_on(elapsed: float) -> bool:
+    """Whether the blinking Terminal Key Cap is in its on part, `elapsed` seconds after it began."""
+    return elapsed % (TERMINAL_CAP_ON + TERMINAL_CAP_OFF) < TERMINAL_CAP_ON
 
 
 def _describe_code(reading: CodeReading) -> str:

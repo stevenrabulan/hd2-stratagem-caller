@@ -2,7 +2,7 @@ import pytest
 
 from stratagem_caller.terminal_code import CodeReading, CodeStatus
 from stratagem_caller.terminal_prompt import TerminalPrompt
-from stratagem_caller.terminal_watch import GIVE_UP_AFTER, GONE_FOR, SAFETY_LIMIT, TerminalWatch
+from stratagem_caller.terminal_watch import CODE_HOLD, GIVE_UP_AFTER, GONE_FOR, SAFETY_LIMIT, TerminalWatch
 
 NONE = TerminalPrompt.NONE
 INTERACT = TerminalPrompt.INTERACT
@@ -128,7 +128,7 @@ def test_a_code_reading_is_kept_while_the_prompt_reads_interact():
     watch = TerminalWatch(started=0.0)
     assert watch.code is None
     watch.offer(INTERACT, 1.0)
-    watch.offer_code(CODE)
+    watch.offer_code(CODE, 1.0)
     assert watch.code is CODE
     watch.offer(INTERACT, 1.1)
     assert watch.code is CODE  # the next reading of the prompt does not forget it
@@ -138,7 +138,7 @@ def test_a_code_reading_is_kept_while_the_prompt_reads_interact():
 def test_the_code_goes_when_the_prompt_stops_reading_interact(prompt):
     watch = TerminalWatch(started=0.0)
     watch.offer(INTERACT, 1.0)
-    watch.offer_code(CODE)
+    watch.offer_code(CODE, 1.0)
     watch.offer(prompt, 1.1)
     assert watch.code is None
     watch.offer(INTERACT, 1.2)
@@ -149,5 +149,57 @@ def test_the_code_goes_when_the_prompt_stops_reading_interact(prompt):
 def test_a_code_reading_that_arrives_after_the_prompt_changed_is_dropped(prompt):
     watch = TerminalWatch(started=0.0)
     watch.offer(prompt, 1.0)
-    watch.offer_code(CODE)
+    watch.offer_code(CODE, 1.0)
     assert watch.code is None
+
+
+UNREADABLE = CodeReading(CodeStatus.UNREADABLE, why="a hand over an arrow")
+NO_CODE = CodeReading(CodeStatus.NONE, why="no row of arrows")
+ALL_ENTERED = CodeReading(CodeStatus.READ, "LURRDR", 6, why="6 arrows")
+
+
+@pytest.mark.parametrize("dropout", [UNREADABLE, NO_CODE], ids=["unreadable", "none"])
+def test_a_code_is_held_through_readings_that_cannot_see_it_for_a_moment(dropout):
+    watch = TerminalWatch(started=0.0)
+    watch.offer(INTERACT, 1.0)
+    watch.offer_code(CODE, 1.0)
+    watch.offer_code(dropout, 1.0 + CODE_HOLD - 0.05)
+    assert watch.code is CODE
+    watch.offer_code(dropout, 1.0 + CODE_HOLD)
+    assert watch.code is dropout  # held no longer
+
+
+def test_each_fresh_reading_of_the_code_starts_the_hold_again():
+    watch = TerminalWatch(started=0.0)
+    watch.offer(INTERACT, 1.0)
+    watch.offer_code(CODE, 1.0)
+    watch.offer_code(UNREADABLE, 1.25)
+    watch.offer_code(CODE, 1.5)
+    watch.offer_code(UNREADABLE, 1.5 + CODE_HOLD - 0.05)
+    assert watch.code is CODE
+
+
+def test_a_code_read_all_entered_is_not_held_off():
+    watch = TerminalWatch(started=0.0)
+    watch.offer(INTERACT, 1.0)
+    watch.offer_code(CODE, 1.0)
+    watch.offer_code(ALL_ENTERED, 1.25)
+    assert watch.code is ALL_ENTERED
+
+
+def test_code_waits_since_marks_when_a_code_began_to_wait_and_clears_when_it_stops():
+    watch = TerminalWatch(started=0.0)
+    watch.offer(INTERACT, 1.0)
+    watch.offer_code(CODE, 1.0)
+    watch.offer_code(CODE, 1.25)
+    assert watch.code_waits_since == 1.0
+    watch.offer_code(ALL_ENTERED, 1.5)
+    assert watch.code_waits_since is None
+    watch.offer_code(CODE, 1.75)
+    assert watch.code_waits_since == 1.75
+    watch.offer(MOVE, 2.0)
+    assert watch.code_waits_since is None
+
+
+def test_the_hold_is_three_code_readings():
+    assert CODE_HOLD == 0.75

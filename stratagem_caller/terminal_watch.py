@@ -4,7 +4,7 @@ Like the Arming Window it holds no keyboard, screen or clock: it is driven by re
 times they were taken.
 """
 
-from .terminal_code import CodeReading
+from .terminal_code import CodeReading, CodeStatus
 from .terminal_prompt import TerminalPrompt
 
 # The Use Key is also used for samples, ammo and pods, so a press that brings no Terminal Prompt
@@ -24,12 +24,18 @@ READING_INTERVAL = 0.1
 # about 25 ms to read), so 4 a second is about 15 % of one core for as long as a Terminal waits for a
 # Code, and the Key Cap is never more than a quarter of a second behind the screen.
 CODE_READING_INTERVAL = 0.25
+# A Code read with directions left is kept through readings that cannot see it (unreadable, or no
+# Code) for this long: a hand or a passing frame hides it for a reading or two, and the Key Cap
+# for the Terminal Key should not blink with them. Three readings' worth.
+CODE_HOLD = 0.75
 
 
 class TerminalWatch:
     def __init__(self, started: float):
         self.prompt = TerminalPrompt.NONE  # the latest reading
         self.code: CodeReading | None = None  # the latest reading of the Code; None while the prompt is not INTERACT
+        self.code_waits_since: float | None = None  # when `code` began to wait for directions; None while it does not
+        self._code_seen_at: float | None = None  # when a Code with directions left was last read
         self._shown_at: float | None = None  # when a Terminal Prompt was last read, since the press
         self.restart(started)
 
@@ -39,17 +45,32 @@ class TerminalWatch:
         self._started = now
         self._shown_at = None
 
-    def offer_code(self, reading: CodeReading) -> None:
-        """Feed a reading of the Code. It counts only while the prompt reads INTERACT (a reading
-        begun before the prompt changed may arrive after)."""
-        if self.prompt is TerminalPrompt.INTERACT:
-            self.code = reading
+    def offer_code(self, reading: CodeReading, now: float) -> None:
+        """Feed a reading of the Code taken at `now`. It counts only while the prompt reads INTERACT
+        (a reading begun before the prompt changed may arrive after). A reading that cannot see the
+        Code does not replace one with directions left until CODE_HOLD has passed since that was read."""
+        if self.prompt is not TerminalPrompt.INTERACT:
+            return
+        unseen = reading.status is not CodeStatus.READ
+        if unseen and code_waits(self.code) and now - self._code_seen_at < CODE_HOLD:
+            return
+        if code_waits(reading):
+            self._code_seen_at = now
+            if not code_waits(self.code):
+                self.code_waits_since = now
+        else:
+            self.code_waits_since = None
+        self.code = reading
+
+    def drop_code(self) -> None:
+        """Forget the Code: it goes with its prompt, or changes under the tool's own typing."""
+        self.code = self.code_waits_since = None
 
     def offer(self, prompt: TerminalPrompt, now: float) -> str | None:
         """Feed a reading. Returns why the watch is over, or None while it goes on."""
         self.prompt = prompt
         if prompt is not TerminalPrompt.INTERACT:
-            self.code = None  # a Code goes with its prompt, and the next step's has not been read
+            self.drop_code()  # a Code goes with its prompt, and the next step's has not been read
         if prompt is not TerminalPrompt.NONE:
             self._shown_at = now
         if now - self._started >= SAFETY_LIMIT:
@@ -60,3 +81,8 @@ class TerminalWatch:
         elif prompt is TerminalPrompt.NONE and now - self._shown_at >= GONE_FOR:
             return "Terminal Prompt gone"
         return None
+
+
+def code_waits(reading: CodeReading | None) -> bool:
+    """Whether `reading` is a Code read in full with directions still to enter."""
+    return reading is not None and reading.status is CodeStatus.READ and bool(reading.remaining)
