@@ -1,8 +1,11 @@
 import dataclasses
+import tempfile
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
+import cv2
 import numpy as np
 import pytest
 from test_terminal_prompt import grab, screen_with
@@ -65,6 +68,8 @@ class Terminal:
         self.areas = []
         self.gate = threading.Event()  # a screen grab waits for this; set from the start
         self.gate.set()
+        self.failed_codes = Path(tempfile.mkdtemp())
+        monkeypatch.setattr(app_module, "FAILED_CODES_DIR", self.failed_codes)
         settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
         settings = dataclasses.replace(settings, keystroke_ms=(0, 0))
         monkeypatch.setattr(winkeys, "foreground_title", lambda: settings.window_title)
@@ -141,6 +146,29 @@ def test_a_terminal_with_no_code_on_its_screen_beeps_too(monkeypatch):
     assert terminal.press_terminal_key() is False
     terminal.wait_until_typed(tones=2)
     assert terminal.tones == [330, 330] and terminal.typed() == []
+
+
+@pytest.mark.parametrize(
+    "fixture", ["drill_code_five_entered_hand_over_first_arrow", "drill_next_step_not_a_code_bar"], ids=["unreadable", "none"]
+)
+def test_a_failed_read_saves_the_exact_region_it_looked_at(monkeypatch, fixture):
+    screen = screen_with(fixture)
+    terminal = Terminal(monkeypatch, screen)
+    terminal.press_terminal_key()
+    terminal.wait_until_typed(tones=2)
+    assert wait_for(lambda: list(terminal.failed_codes.glob("*.png")))
+    (saved,) = terminal.failed_codes.glob("*.png")
+    area = code_area({"left": 0, "top": 0, "width": screen.shape[1], "height": screen.shape[0]})
+    assert np.array_equal(cv2.imread(str(saved)), grab(screen, area))
+    assert any(saved.name in line for line in terminal.lines)
+
+
+def test_a_read_code_saves_nothing(monkeypatch):
+    terminal = Terminal(monkeypatch, screen_with("drill_code_two_entered_angle_a"))
+    terminal.press_terminal_key()
+    terminal.wait_until_typed()
+    time.sleep(0.1)
+    assert list(terminal.failed_codes.iterdir()) == []
 
 
 def test_each_press_reads_the_code_afresh_and_nothing_is_retried(monkeypatch):

@@ -5,6 +5,7 @@ import random
 import threading
 import time
 import winsound
+from datetime import datetime
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from . import winkeys
 
 winkeys.make_dpi_aware()
 
+import cv2  # noqa: E402
 import keyboard  # noqa: E402
 import mss  # noqa: E402
 import numpy as np  # noqa: E402
@@ -46,6 +48,9 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = ROOT / "logs" / "stratagem_caller.log"
 # Screen regions saved by the Mark Key. Under fixtures/raw/, so not in version control.
 MARKS_DIR = ROOT / "fixtures" / "raw" / "marks"
+# The region each failed Terminal Key read looked at, to compare with what the player saw.
+# Under logs/, so not in version control.
+FAILED_CODES_DIR = ROOT / "logs" / "failed_codes"
 # Regions kept for a mark: about 1 to 3 s of watching (about 3.6 MB each at 4K).
 RECENT_REGIONS = 16
 
@@ -275,7 +280,9 @@ class App:
         started = time.perf_counter()
         try:
             with mss.MSS() as sct:
-                reading = _read_code(sct, sct.monitors[1])
+                monitor = sct.monitors[1]
+                region = np.asarray(sct.grab(code_area(monitor)))[:, :, :3]
+            reading = read_terminal_code(region, monitor["height"])
         except Exception as error:
             self._log(f"Terminal Key: reading the Code failed, {error!r}")
             self._beep_for_code()
@@ -283,8 +290,12 @@ class App:
         took = f"read in {(time.perf_counter() - started) * 1000:.0f} ms"
         if reading.status is not CodeStatus.READ:
             what = "unreadable" if reading.status is CodeStatus.UNREADABLE else "not on screen"
-            self._log(f"Terminal Key: Code {what}, {reading.why} ({took})")
+            path = FAILED_CODES_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]
+            path = path.with_suffix(".png")
+            self._log(f"Terminal Key: Code {what}, {reading.why} ({took}); region saved to {path.name}")
             self._beep_for_code()
+            # Off the send path: a 4K PNG takes a while to write.
+            threading.Thread(target=_save_region, args=(path, region, self._log), daemon=True).start()
         elif not reading.remaining:
             self._log(f"Terminal Key: Code {reading.code}, all {len(reading.code)} entered, nothing left to type ({took})")
         else:
@@ -374,6 +385,15 @@ class App:
             self._tone(440 if self.router.paused else 880, 120)
             print("paused" if self.router.paused else "resumed")
         self.on_pause_change()
+
+
+def _save_region(path: Path, region: np.ndarray, log: Callable[[str], None]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not cv2.imwrite(str(path), region):
+            raise OSError("cv2.imwrite returned False")
+    except Exception as error:
+        log(f"Terminal Key: could not save {path.name}, {error!r}")
 
 
 def _read_code(sct, monitor: dict) -> CodeReading:
