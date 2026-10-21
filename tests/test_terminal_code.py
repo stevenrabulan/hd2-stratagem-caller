@@ -187,11 +187,13 @@ AREA_CODES = {
     "eject_finger_near_first_arrow": (EJECT_CODE, 0),
     "extraction_nothing_entered": ("LDRDULLU", 0),
     "extraction_seven_entered": ("UDRLLDUL", 7),
+    # 2026-10-20 and 21: the arrows show near white (about 245), not light grey.
+    "hellbomb_white_arrows_reticle_on_second": ("RLLUDL", 0),
+    "hellbomb_white_arrows_square_on": ("LRUDRD", 0),
 }
 # Read wrong today: the reticle cuts the arrow under it apart, and on a steep angle the near arrows
 # are too big for the area filter. Remove a name here once ticket 06 reads it.
 NOT_READ_YET = {
-    "login_reticle_on_third_arrow",
     "eject_reticle_on_fourth_arrow",
     "eject_steep_angle_reticle_on_fourth_arrow",
     "eject_finger_near_first_arrow",
@@ -251,7 +253,7 @@ RETICLES = ["grey_crosshair", "green_dot", "orange_chevron", "wide_white_ring"]
 
 
 @pytest.mark.parametrize(
-    "kind", [k if k == "grey_crosshair" else pytest.param(k, marks=NOT_YET) for k in RETICLES]
+    "kind", [pytest.param(k, marks=NOT_YET) if k == "green_dot" else k for k in RETICLES]
 )
 def test_any_reticle_over_the_middle_arrow_still_reads(kind):
     # SYNTHETIC: different weapons draw different reticles at the screen's centre. Whatever its shape

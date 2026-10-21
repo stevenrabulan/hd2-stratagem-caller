@@ -36,15 +36,16 @@ ARROW_SIDE = (35, 130)
 # Fewest arrows in a Code (a row shorter than this is something else on screen).
 MIN_ARROWS = 3
 
-# Arrow colours (BGR pixels): light grey (not entered), yellow or pale yellow while it fades (entered).
-GREY_MIN = 140  # the dimmest channel of a grey arrow (they measure 175 to 190)
+# Arrow colours (BGR pixels): light grey up to pure white (not entered; grey measured 175 to 190,
+# but the game can draw them near white, about 245), yellow or pale yellow while it fades (entered).
+GREY_MIN = 140  # the dimmest channel of a grey arrow; there is no upper limit
 GREY_SPREAD = 30  # the channels of grey differ by less than this
 YELLOW_RED = 140
 YELLOW_GREEN = 125
 YELLOW_SPREAD = 40  # red and green differ by less than this
 ENTERED_BLUE_BELOW = 40  # blue is at least this far under red and green in yellow (pale yellow: 60)
-# Pixels the reader looks past: the pink circle and markers, and the white reticle.
-RETICLE_MIN = 235
+# The reader looks past the pink circle and markers. A white reticle counts as arrow-coloured, but
+# its ring is too thin to survive as part of an arrow (see THIN_FEATURE).
 
 # Lines and rings thinner than this many pixels are not part of an arrow.
 THIN_FEATURE = 9
@@ -200,7 +201,7 @@ def _masks(region: np.ndarray, scale: float) -> tuple[np.ndarray, np.ndarray, np
     blue, green, red = (region[:, :, i].astype(np.int16) for i in range(3))
     lowest = np.minimum(np.minimum(blue, green), red)
     highest = np.maximum(np.maximum(blue, green), red)
-    grey = (lowest >= GREY_MIN) & (highest - lowest <= GREY_SPREAD) & (lowest < RETICLE_MIN)
+    grey = (lowest >= GREY_MIN) & (highest - lowest <= GREY_SPREAD)
     yellow = (
         (red >= YELLOW_RED)
         & (green >= YELLOW_GREEN)
@@ -208,8 +209,7 @@ def _masks(region: np.ndarray, scale: float) -> tuple[np.ndarray, np.ndarray, np
         & (blue <= np.minimum(red, green) - ENTERED_BLUE_BELOW)
     )
     pink = (red >= 160) & (green * 2 <= red) & (blue * 7 >= red)
-    reticle = lowest >= RETICLE_MIN
-    ignore = cv2.dilate((pink | reticle).astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    ignore = cv2.dilate(pink.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     coloured = grey | yellow
     # The reticle's pale ring and the letters and lines of the Terminal's screen are thin, an arrow is
     # not: open them away, then give back the pixels around what is left (an arrow's sharp tip).

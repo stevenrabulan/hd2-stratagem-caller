@@ -28,3 +28,5 @@ The first five are live grabs the tool saved after a failed Terminal Key read (`
 | `eject_first_arrow_behind_arm.png` | Same Code; the player's arm hides the first arrow (→), six arrows show |
 | `extraction_nothing_entered.png` | Extraction terminal, Code ← ↓ → ↓ ↑ ← ← ↑, nothing entered, reticle under the row |
 | `extraction_seven_entered.png` | Extraction terminal, Code ↑ ↓ → ← ← ↓ ↑ ←, seven entered |
+| `hellbomb_white_arrows_reticle_on_second.png` | Hellbomb arming Terminal (live grab, 2026-10-21), Code → ← ← ↑ ↓ ←, tilted about 30 degrees, the arrows near white (about 245) instead of light grey, a small reticle ring on the second arrow |
+| `hellbomb_white_arrows_square_on.png` | Hellbomb arming Terminal (live grab, 2026-10-20), Code ← → ↑ ↓ → ↓, square on, the arrows near white |
