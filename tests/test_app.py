@@ -163,6 +163,62 @@ def test_a_failed_read_saves_the_exact_region_it_looked_at(monkeypatch, fixture)
     assert any(saved.name in line for line in terminal.lines)
 
 
+def menu_screen(name):
+    """A full 4K screen with a menu fixture (a top-left region) in its corner."""
+    region = cv2.imread(str(ROOT / "fixtures" / "menu" / f"{name}.png"))
+    screen = np.zeros((2160, 3840, 3), np.uint8)
+    screen[: region.shape[0], : region.shape[1]] = region
+    return screen, region
+
+
+@pytest.mark.parametrize("after_a_reading", [False, True], ids=["while_waiting", "at_once"])
+def test_a_slot_that_cannot_be_called_saves_the_menu_region_it_read(monkeypatch, tmp_path, after_a_reading):
+    # The menu is open but nothing in it is callable, so Slot 3's Trigger Key beeps: either
+    # once the watch reads the menu, or at once from a Reading already taken.
+    monkeypatch.setattr(app_module, "FAILED_CALLS_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "FIRST_READING_DELAY", 0)
+    screen, region = menu_screen("open_menu_nothing_callable")
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: StillScreen(screen))
+    settings = dataclasses.replace(load(ROOT / "settings.toml", ROOT / "codebook.toml"), keystroke_ms=(0, 0))
+    monkeypatch.setattr(winkeys, "foreground_title", lambda: settings.window_title)
+    monkeypatch.setattr(winkeys, "send", lambda key, down: None)
+    lines = []
+    app = App(settings, log=lines.append, tone=lambda hz, ms: None)
+    trigger = winkeys.Key.named("3")
+    app.on_event(Terminal.event(app.call_key, "down"))
+    app.on_event(Terminal.event(app.call_key, "up"))
+    if after_a_reading:
+        assert wait_for(lambda: "menu open" in app.router.describe())
+    app.on_event(Terminal.event(trigger, "down"))
+    app.on_event(Terminal.event(trigger, "up"))
+    try:
+        # The PNG is written on its own thread: wait until it reads back whole.
+        assert wait_for(lambda: [p for p in tmp_path.glob("*.png") if cv2.imread(str(p)) is not None])
+        (saved,) = tmp_path.glob("*.png")
+        assert np.array_equal(cv2.imread(str(saved)), region)
+        assert any("cannot be called" in line and saved.name in line for line in lines)
+    finally:
+        app.stop()
+
+
+class StillScreen:
+    """Stands in for mss: every grab is cut from the same full screen."""
+
+    def __init__(self, screen):
+        self.monitors = [None, {"left": 0, "top": 0, "width": screen.shape[1], "height": screen.shape[0]}]
+        self._screen = screen
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def grab(self, area):
+        frame = grab(self._screen, area)
+        return np.concatenate([frame, np.full(frame.shape[:2] + (1,), 255, np.uint8)], axis=2)  # BGRA
+
+
 def test_a_read_code_saves_nothing(monkeypatch):
     terminal = Terminal(monkeypatch, screen_with("drill_code_two_entered_angle_a"))
     terminal.press_terminal_key()

@@ -51,6 +51,9 @@ MARKS_DIR = ROOT / "fixtures" / "raw" / "marks"
 # The region each failed Terminal Key read looked at, to compare with what the player saw.
 # Under logs/, so not in version control.
 FAILED_CODES_DIR = ROOT / "logs" / "failed_codes"
+# The menu region read when a Trigger Key beeped (Slot cannot be called), to see why.
+# Under logs/, so not in version control.
+FAILED_CALLS_DIR = ROOT / "logs" / "failed_calls"
 # Regions kept for a mark: about 1 to 3 s of watching (about 3.6 MB each at 4K).
 RECENT_REGIONS = 16
 
@@ -164,6 +167,9 @@ class App:
         if decision.outcome is not None:
             # A Trigger Key decided at once from the Readings already taken.
             self._spawn(self._act, decision.outcome, sends=decision.outcome.sends_keys)
+            recent = self.recent.snapshot()
+            if decision.outcome.kind is Kind.BEEP and recent:
+                self._save_failed_call(recent[-1][1])  # the region of the latest Reading
         if decision.direct_code is not None:
             self._spawn(self._direct_call, decision.direct_code, decision.direct_presses_call_key, sends=True)
         return decision.let_through
@@ -217,6 +223,8 @@ class App:
                             if not outcome.ends_watch:
                                 # A beep: keep reading while it sounds.
                                 threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
+                                if outcome.kind is Kind.BEEP:
+                                    self._save_failed_call(region)
                             else:
                                 self._act(outcome, trigger)
                                 return
@@ -302,6 +310,12 @@ class App:
             self._log(f"Terminal Key: Code {reading.code}, {reading.entered} entered, typing {reading.remaining} ({took})")
             with self._send_lock:
                 self._tap_code(reading.remaining, until_paused=True)
+
+    def _save_failed_call(self, region: np.ndarray) -> None:
+        """Keep the menu region a beeping Trigger Key was decided on, off the reading thread."""
+        path = (FAILED_CALLS_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]).with_suffix(".png")
+        self._log(f"Slot cannot be called: menu region saved to {path.name}")
+        threading.Thread(target=_save_region, args=(path, region, self._log), daemon=True).start()
 
     def _beep_for_code(self) -> None:
         """The Terminal Key has no Code to enter: the Beep, and the Terminal Key's Key Cap flashes red
@@ -393,7 +407,7 @@ def _save_region(path: Path, region: np.ndarray, log: Callable[[str], None]) -> 
         if not cv2.imwrite(str(path), region):
             raise OSError("cv2.imwrite returned False")
     except Exception as error:
-        log(f"Terminal Key: could not save {path.name}, {error!r}")
+        log(f"could not save {path.name}, {error!r}")
 
 
 def _read_code(sct, monitor: dict) -> CodeReading:
