@@ -11,6 +11,18 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 
 **Status:** Trigger Keys and Direct Keys are built. The Terminal watch (Use Key, the Terminal Prompt, and the Terminal Key being held back at a Terminal) and the reading and typing of the Code are built and tested on the Terminal fixtures, a Steam screenshot and scripted readings, but have not been confirmed in-game; the Key Cap for the Terminal Key (ENTER CODE, with its red flash) is built and tested on scripted readings and painted onto every Terminal fixture, but not confirmed in-game either. The screen reader is tested against 4K fixtures; sending keys into the game has not been confirmed in a mission yet. The Overlay (Key Caps, their double red flash on a beep, and the pulsing ready heading) is built and tested on its drawing, show/hide rules, flash timing and pulse, but has not been confirmed in-game yet.
 
+## Requirements
+
+You need all of these. Anything else is untested and may stop the tool reading the screen.
+
+- **Windows 11**
+- **One monitor at 3840×2160.** Other sizes are untested.
+- **Game in borderless fullscreen.** Exclusive fullscreen hides the game from screen capture.
+- **In-game HUD Opacity set to High** (Options > HUD). Other HUD settings are untested.
+- **Python 3.11** (see [Setup](#setup))
+
+The full setup the tool is tested against is under [Reference setup](#reference-setup).
+
 ## Running
 
 ### From the desktop shortcut
@@ -105,6 +117,7 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 | Windows display scaling | 150% (Windows reports 2560×1440 to apps that are not DPI-aware) |
 | Game display mode | Borderless fullscreen |
 | HDR | On (Windows and in-game) |
+| HUD Opacity | High |
 | Call Key | `B`, press to toggle |
 | Direction Keys | Arrow keys |
 | Python | 3.11 |

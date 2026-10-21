@@ -38,6 +38,13 @@ ICONS_FOR_OPEN_MENU = 4
 
 # Callable arrows are pure white; dimmed, entered (yellow) and background pixels fall below this.
 WHITE_THRESHOLD = 225
+# The game can draw callable arrows see-through, so over dark ground they show cream
+# (measured: red and green 255, blue 214 and up) and never pure white. A second look counts
+# a pixel as arrow-bright when red and green clear the first threshold and blue the second.
+# Both sit well below that cream and well above dimmed arrows (cores about 170 red and
+# green, 140 blue) and entered (yellow) ones (blue near 0).
+CREAM_RED_GREEN_THRESHOLD = 205
+CREAM_BLUE_THRESHOLD = 150
 
 
 @dataclass(frozen=True)
@@ -78,8 +85,48 @@ def region_size(screen_height: int) -> tuple[int, int]:
 def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Reading:
     """Read the top-left screen region (BGR, at least region_size big)."""
     scale = screen_height / REFERENCE_HEIGHT
-    white = (region[:, :, :3].min(axis=2) >= WHITE_THRESHOLD).astype(np.uint8)
-    _, labels, stats, _ = cv2.connectedComponentsWithStats(white, 8)
+    pixels = region[:, :, :3]
+    white = pixels.min(axis=2) >= WHITE_THRESHOLD
+    codes, unreadable, found = _read_codes(white, scale)
+    # See-through arrows show cream wherever the ground behind them is dark, so look again
+    # with cream counted as arrow-bright.
+    cream = (pixels[:, :, 1:3].min(axis=2) >= CREAM_RED_GREEN_THRESHOLD) & (pixels[:, :, 0] >= CREAM_BLUE_THRESHOLD)
+    cream_codes, _, cream_found = _read_codes(cream, scale)
+    for slot, code in list(codes.items()):
+        # Cream arrows past the end of a white Code: the white ones were only its start.
+        if any(index >= len(code) for index in cream_found.get(slot, {})):
+            if cream_codes.get(slot, "").startswith(code):
+                codes[slot] = cream_codes[slot]
+            else:
+                del codes[slot]
+                unreadable.add(slot)
+    # A Slot with no pure white arrow counts only when the second look finds a whole, clean
+    # Code; it never makes a Slot unreadable. A row with white arrows after cream ones (the
+    # cream ones entered by hand) was seen in the first look, so it stays out.
+    for slot, code in cream_codes.items():
+        if slot not in found:
+            codes[slot] = code
+
+    in_place = [slot for slot in range(1, MAX_SLOTS + 1) if _icon_in_place(region, slot, scale)]
+    size = round(ICON_SIZE * scale)
+    left = round(ICON_LEFT * scale)
+    icons = {}
+    for slot in in_place:
+        top = round((ICON_TOP + (slot - 1) * SLOT_PITCH) * scale)
+        icons[slot] = region[top : top + size, left : left + size].copy()
+    return Reading(
+        codes=codes,
+        unreadable=unreadable,
+        icons=icons,
+        menu_open=_menu_open(in_place, codes),
+    )
+
+
+def _read_codes(mask: np.ndarray, scale: float) -> tuple[dict[int, str], set[int], dict[int, dict[int, str]]]:
+    """The Codes and unreadable Slots in a mask of arrow-bright pixels, and every Slot on
+    whose line an arrow was recognised at all (read, unreadable or partly entered), with
+    the arrows found at valid positions on it: {arrow position: direction}."""
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), 8)
 
     # slot -> {arrow position in the Code: direction}
     found: dict[int, dict[int, str]] = {}
@@ -125,19 +172,7 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
             continue  # a gap: the player has entered part of the Code by hand
         codes[slot] = "".join(arrows[i] for i in range(len(arrows)))
 
-    in_place = [slot for slot in range(1, MAX_SLOTS + 1) if _icon_in_place(region, slot, scale)]
-    size = round(ICON_SIZE * scale)
-    left = round(ICON_LEFT * scale)
-    icons = {}
-    for slot in in_place:
-        top = round((ICON_TOP + (slot - 1) * SLOT_PITCH) * scale)
-        icons[slot] = region[top : top + size, left : left + size].copy()
-    return Reading(
-        codes=codes,
-        unreadable=unreadable,
-        icons=icons,
-        menu_open=_menu_open(in_place, codes),
-    )
+    return codes, unreadable, found | {slot: {} for slot in rejected if slot not in found}
 
 
 def _menu_open(in_place: list[int], codes: dict[int, str]) -> bool:

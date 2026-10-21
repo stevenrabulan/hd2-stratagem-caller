@@ -33,6 +33,9 @@ CASES = {
     "menu_closed_bright_sky": {},
     # 100 ms after the Call Key: rows are still sliding in from the left.
     "menu_sliding_in": {},
+    # Some games draw every callable arrow see-through: cream over dark ground, never pure white.
+    "cream_arrows_over_dark_ground": {4: WARP_PACK, 5: "DDULR", 6: "DURRL"},
+    "cream_arrows_four_slots": {1: "UDRLU", 2: RESUPPLY, 3: "DULDURDU", 4: "RDURD"},
 }
 
 
@@ -40,6 +43,14 @@ CASES = {
 def test_reads_codes_by_slot(name):
     region = cv2.imread(str(FIXTURES / f"{name}.png"))
     assert read_menu(region).codes == CASES[name]
+
+
+def test_white_arrows_followed_by_cream_ones_give_no_shortened_code():
+    # Quasar Cannon (Slot 6) is DDULR: its first two arrows show pure white over brighter
+    # ground, the last three cream over dark ground. Reading only the white ones gave DD.
+    reading = _read("cream_arrows_after_white_ones")
+    assert reading.codes.get(6) in (None, "DDULR")
+    assert reading.codes.get(6) == "DDULR" or 6 in reading.unreadable
 
 
 def test_partly_entered_code_is_not_read():
