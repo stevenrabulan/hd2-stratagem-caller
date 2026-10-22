@@ -92,20 +92,19 @@ def read_menu(region: np.ndarray, screen_height: int = REFERENCE_HEIGHT) -> Read
     # with cream counted as arrow-bright.
     cream = (pixels[:, :, 1:3].min(axis=2) >= CREAM_RED_GREEN_THRESHOLD) & (pixels[:, :, 0] >= CREAM_BLUE_THRESHOLD)
     cream_codes, _, cream_found = _read_codes(cream, scale)
-    for slot, code in list(codes.items()):
-        # Cream arrows past the end of a white Code: the white ones were only its start.
-        if any(index >= len(code) for index in cream_found.get(slot, {})):
-            if cream_codes.get(slot, "").startswith(code):
-                codes[slot] = cream_codes[slot]
-            else:
-                del codes[slot]
-                unreadable.add(slot)
-    # A Slot with no pure white arrow counts only when the second look finds a whole, clean
-    # Code; it never makes a Slot unreadable. A row with white arrows after cream ones (the
-    # cream ones entered by hand) was seen in the first look, so it stays out.
-    for slot, code in cream_codes.items():
-        if slot not in found:
-            codes[slot] = code
+    for slot in set(found) | set(cream_codes):
+        cream_code = cream_codes.get(slot)
+        if cream_code is not None and all(cream_code[i : i + 1] == d for i, d in found.get(slot, {}).items()):
+            # Brightness varies along a row, so only some of its arrows may pass as white. A whole,
+            # clean cream Code that agrees with every white arrow is the Code. (A Code partly typed
+            # by hand looks the same, cream then white, and is read in full too.)
+            codes[slot] = cream_code
+            unreadable.discard(slot)
+        elif slot in codes and any(index >= len(codes[slot]) for index in cream_found.get(slot, {})):
+            # Cream arrows past the end of a white Code that do not make a Code with it: the
+            # white ones may be only its start.
+            del codes[slot]
+            unreadable.add(slot)
 
     in_place = [slot for slot in range(1, MAX_SLOTS + 1) if _icon_in_place(region, slot, scale)]
     size = round(ICON_SIZE * scale)
