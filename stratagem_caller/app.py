@@ -59,6 +59,9 @@ RECENT_REGIONS = 16
 
 # Reading the menu before it has started to slide in is wasted work.
 FIRST_READING_DELAY = 0.15
+# How long after a Call's last key the menu is read again. The game closes the menu once it
+# takes a Code, so a menu still open then means the Call did not go through.
+CALL_CHECK_DELAY = 0.5
 
 
 def _print_warning(text: str) -> None:
@@ -311,6 +314,33 @@ class App:
             with self._send_lock:
                 self._tap_code(reading.remaining, until_paused=True)
 
+    def _check_call(self, code: str) -> None:
+        """Read the menu once, CALL_CHECK_DELAY after a Call was typed. Still open means the game
+        did not take the Code: log it and keep the region. A Call Key press since (a new Arming
+        Window) means the player opened the menu again, which proves nothing either way."""
+        time.sleep(CALL_CHECK_DELAY)
+        if self.router.is_watching_menu():
+            return
+        try:
+            with mss.MSS() as sct:
+                monitor = sct.monitors[1]
+                region = np.asarray(sct.grab(_menu_area(monitor)))[:, :, :3]
+            reading = read_menu(region, monitor["height"])
+        except Exception as error:  # A failed check must not look like a failed Call.
+            self._log(f"Call {code}: check after typing failed, {error!r}")
+            return
+        if not reading.menu_open:
+            return
+        showing = sorted(slot for slot, shown in reading.codes.items() if shown == code)
+        where = f"Slots {','.join(map(str, showing))} still show it" if showing else "its Code no longer shows"
+        path = (FAILED_CALLS_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]).with_suffix(".png")
+        path = path.with_name(path.stem + "-not-taken.png")
+        self._log(
+            f"Call {code} not taken: menu still open {CALL_CHECK_DELAY:.1f} s later, {where}; "
+            f"menu region saved to {path.name}"
+        )
+        _save_region(path, region, self._log)
+
     def _save_failed_call(self, region: np.ndarray) -> None:
         """Keep the menu region a beeping Trigger Key was decided on, off the reading thread."""
         path = (FAILED_CALLS_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]).with_suffix(".png")
@@ -333,6 +363,9 @@ class App:
             return
         elif outcome.kind is Kind.CALL:
             self._type(outcome.code)
+            if not self.router.paused:
+                # Off the send, so the player's keys are their own again meanwhile.
+                threading.Thread(target=self._check_call, args=(outcome.code,), daemon=True).start()
         elif outcome.hands_back and trigger is not None:
             self._hand_back(trigger)
 
@@ -346,6 +379,8 @@ class App:
                 self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
             self._tap_code(code)
         self.router.close_window()
+        if not self.router.paused:
+            threading.Thread(target=self._check_call, args=(code,), daemon=True).start()
 
     def _type(self, code: str) -> None:
         with self._send_lock:
