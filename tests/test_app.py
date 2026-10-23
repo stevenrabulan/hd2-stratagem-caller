@@ -171,10 +171,10 @@ def menu_screen(name):
     return screen, region
 
 
-@pytest.mark.parametrize("after_a_reading", [False, True], ids=["while_waiting", "at_once"])
+@pytest.mark.parametrize("after_a_reading", [False, True], ids=["before_any_reading", "after_a_reading"])
 def test_a_slot_that_cannot_be_called_saves_the_menu_region_it_read(monkeypatch, tmp_path, after_a_reading):
-    # The menu is open but nothing in it is callable, so Slot 3's Trigger Key beeps: either
-    # once the watch reads the menu, or at once from a Reading already taken.
+    # The menu is open but nothing in it is callable, so Slot 3's Trigger Key beeps once the
+    # watch reads the menu after the press, whether or not it had read it before.
     monkeypatch.setattr(app_module, "FAILED_CALLS_DIR", tmp_path)
     monkeypatch.setattr(app_module, "FIRST_READING_DELAY", 0)
     screen, region = menu_screen("open_menu_nothing_callable")

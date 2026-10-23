@@ -170,9 +170,6 @@ class App:
         if decision.outcome is not None:
             # A Trigger Key decided at once from the Readings already taken.
             self._spawn(self._act, decision.outcome, sends=decision.outcome.sends_keys)
-            recent = self.recent.snapshot()
-            if decision.outcome.kind is Kind.BEEP and recent:
-                self._save_failed_call(recent[-1][1])  # the region of the latest Reading
         if decision.direct_code is not None:
             self._spawn(self._direct_call, decision.direct_code, decision.direct_presses_call_key, sends=True)
         return decision.let_through
