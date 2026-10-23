@@ -141,6 +141,10 @@ class ArmingWindow:
         if self.done:
             return Press(False)
         outcome = self._resolve(slot, now)
+        if outcome is not None and outcome.kind is Kind.BEEP:
+            # Held for the next Reading to decide, never beeped from Readings taken before the
+            # press: the Slot may have come off cooldown just as its key went down.
+            outcome = None
         if outcome is not None and outcome.kind is Kind.CALL:
             self.done = True
         if outcome is None:

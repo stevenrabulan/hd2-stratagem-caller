@@ -11,6 +11,18 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 
 **Status:** Trigger Keys and Direct Keys are built. The Terminal watch (Use Key, the Terminal Prompt, and the Terminal Key being held back at a Terminal) and the reading and typing of the Code are built and tested on the Terminal fixtures, a Steam screenshot and scripted readings, but have not been confirmed in-game; the Key Cap for the Terminal Key (ENTER CODE, with its red flash) is built and tested on scripted readings and painted onto every Terminal fixture, but not confirmed in-game either. The screen reader is tested against 4K fixtures; sending keys into the game has not been confirmed in a mission yet. The Overlay (Key Caps, their double red flash on a beep, and the pulsing ready heading) is built and tested on its drawing, show/hide rules, flash timing and pulse, but has not been confirmed in-game yet.
 
+## Requirements
+
+You need all of these. Anything else is untested and may stop the tool reading the screen.
+
+- **Windows 11**
+- **One monitor at 3840×2160.** Other sizes are untested.
+- **Game in borderless fullscreen.** Exclusive fullscreen hides the game from screen capture.
+- **In-game HUD Opacity set to High** (Options > HUD). Other HUD settings are untested.
+- **Python 3.11** (see [Setup](#setup))
+
+The full setup the tool is tested against is under [Reference setup](#reference-setup).
+
 ## Running
 
 ### From the desktop shortcut
@@ -105,6 +117,7 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 | Windows display scaling | 150% (Windows reports 2560×1440 to apps that are not DPI-aware) |
 | Game display mode | Borderless fullscreen |
 | HDR | On (Windows and in-game) |
+| HUD Opacity | High |
 | Call Key | `B`, press to toggle |
 | Direction Keys | Arrow keys |
 | Python | 3.11 |
@@ -113,6 +126,7 @@ The tool is built and tested against this setup. If it misbehaves for you, compa
 
 - **A Trigger Key does nothing and the digit switches weapon.** The tool didn't see a callable Stratagem in the menu. Check the window title in `settings.toml` matches the game's exactly, that the Call Key matches your in-game bind, and that your screen is 3840×2160 (other sizes are untested).
 - **At a Terminal, `1` beeps and types nothing.** The Terminal Prompt reads `INTERACT` but the Code could not be read; the log line `Terminal Key: Code unreadable, ...` says why (an arrow hidden by a hand or the pink circle, the Code too skewed, no Code on this step). Press `1` again once it is clear, or type it yourself. To get the weapon switch back, set `terminal_key` in `settings.toml` to a key you do not use. If `1` still switches weapon at a Terminal, check the log for `Terminal watch started` after the Use Key press, and that the screen is 3840×2160 (the prompt is read from fixed positions, tried at that size only; the Code is searched for in the middle of the screen, about half its width and height).
+- **A Call is typed but nothing happens in-game.** Half a second after each Call the tool reads the menu again. If it is still open, the log says `Call <Code> not taken` and the menu is saved to `logs/failed_calls/` (the file name ends in `-not-taken`). Compare that picture with the Code in the log line.
 - **The menu opens but the Code isn't typed, or is typed wrong.** Check `[direction_keys]` matches your in-game binds. If only the first direction is lost on a Direct Key, raise `direct_key_pause_ms`. If directions are dropped generally, raise `keystroke_ms`.
 - **A Direct Key closes the menu instead of calling.** The menu was open but the tool wasn't watching it (it was paused, the game had lost focus, or the watch hit its 60 s safety limit). Direct Keys skip the Call Key only while the tool is watching a menu you opened with the Call Key; otherwise they press it first and don't look at the screen.
 - **No Key Caps or heading appear next to the menu.** Check `[overlay] enabled` is `true` in `settings.toml`, that the startup text says the Overlay is `on`, and that the game is in borderless fullscreen (the Overlay has only been tried over borderless fullscreen). A Key Cap only appears once the tool has seen the menu open; if Trigger Keys do nothing either, see the first item. A warning (a notification, and the terminal if there is one) and a line in `logs/stratagem_caller.log` say if the Overlay failed to start.

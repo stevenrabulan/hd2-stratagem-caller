@@ -1,8 +1,11 @@
 import dataclasses
+import tempfile
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
+import cv2
 import numpy as np
 import pytest
 from test_terminal_prompt import grab, screen_with
@@ -65,6 +68,8 @@ class Terminal:
         self.areas = []
         self.gate = threading.Event()  # a screen grab waits for this; set from the start
         self.gate.set()
+        self.failed_codes = Path(tempfile.mkdtemp())
+        monkeypatch.setattr(app_module, "FAILED_CODES_DIR", self.failed_codes)
         settings = load(ROOT / "settings.toml", ROOT / "codebook.toml")
         settings = dataclasses.replace(settings, keystroke_ms=(0, 0))
         monkeypatch.setattr(winkeys, "foreground_title", lambda: settings.window_title)
@@ -141,6 +146,181 @@ def test_a_terminal_with_no_code_on_its_screen_beeps_too(monkeypatch):
     assert terminal.press_terminal_key() is False
     terminal.wait_until_typed(tones=2)
     assert terminal.tones == [330, 330] and terminal.typed() == []
+
+
+@pytest.mark.parametrize(
+    "fixture", ["drill_code_five_entered_hand_over_first_arrow", "drill_next_step_not_a_code_bar"], ids=["unreadable", "none"]
+)
+def test_a_failed_read_saves_the_exact_region_it_looked_at(monkeypatch, fixture):
+    screen = screen_with(fixture)
+    terminal = Terminal(monkeypatch, screen)
+    terminal.press_terminal_key()
+    terminal.wait_until_typed(tones=2)
+    assert wait_for(lambda: list(terminal.failed_codes.glob("*.png")))
+    (saved,) = terminal.failed_codes.glob("*.png")
+    area = code_area({"left": 0, "top": 0, "width": screen.shape[1], "height": screen.shape[0]})
+    assert np.array_equal(cv2.imread(str(saved)), grab(screen, area))
+    assert any(saved.name in line for line in terminal.lines)
+
+
+def menu_screen(name):
+    """A full 4K screen with a menu fixture (a top-left region) in its corner."""
+    region = cv2.imread(str(ROOT / "fixtures" / "menu" / f"{name}.png"))
+    screen = np.zeros((2160, 3840, 3), np.uint8)
+    screen[: region.shape[0], : region.shape[1]] = region
+    return screen, region
+
+
+@pytest.mark.parametrize("after_a_reading", [False, True], ids=["before_any_reading", "after_a_reading"])
+def test_a_slot_that_cannot_be_called_saves_the_menu_region_it_read(monkeypatch, tmp_path, after_a_reading):
+    # The menu is open but nothing in it is callable, so Slot 3's Trigger Key beeps once the
+    # watch reads the menu after the press, whether or not it had read it before.
+    monkeypatch.setattr(app_module, "FAILED_CALLS_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "FIRST_READING_DELAY", 0)
+    screen, region = menu_screen("open_menu_nothing_callable")
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: StillScreen(screen))
+    settings = dataclasses.replace(load(ROOT / "settings.toml", ROOT / "codebook.toml"), keystroke_ms=(0, 0))
+    monkeypatch.setattr(winkeys, "foreground_title", lambda: settings.window_title)
+    monkeypatch.setattr(winkeys, "send", lambda key, down: None)
+    lines = []
+    app = App(settings, log=lines.append, tone=lambda hz, ms: None)
+    trigger = winkeys.Key.named("3")
+    app.on_event(Terminal.event(app.call_key, "down"))
+    app.on_event(Terminal.event(app.call_key, "up"))
+    if after_a_reading:
+        assert wait_for(lambda: "menu open" in app.router.describe())
+    app.on_event(Terminal.event(trigger, "down"))
+    app.on_event(Terminal.event(trigger, "up"))
+    try:
+        # The PNG is written on its own thread: wait until it reads back whole.
+        assert wait_for(lambda: [p for p in tmp_path.glob("*.png") if cv2.imread(str(p)) is not None])
+        (saved,) = tmp_path.glob("*.png")
+        assert np.array_equal(cv2.imread(str(saved)), region)
+        assert any("cannot be called" in line and saved.name in line for line in lines)
+    finally:
+        app.stop()
+
+
+def call_slot_2(monkeypatch, tmp_path, after_typing, check_delay=0.05):
+    """Open the menu (Resupply, DDUR, callable at Slot 2) and press Slot 2's Trigger Key. Once the
+    tool has typed the Code the screen shows `after_typing`. Returns the app, its log lines, the
+    keys it typed, and the region shown after typing."""
+    monkeypatch.setattr(app_module, "FAILED_CALLS_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "FIRST_READING_DELAY", 0)
+    monkeypatch.setattr(app_module, "CALL_CHECK_DELAY", check_delay)
+    before, _ = menu_screen("cream_arrows_four_slots")
+    after, after_region = menu_screen(after_typing)
+    shown = StillScreen(before)
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: shown)
+    settings = dataclasses.replace(load(ROOT / "settings.toml", ROOT / "codebook.toml"), keystroke_ms=(0, 0))
+    monkeypatch.setattr(winkeys, "foreground_title", lambda: settings.window_title)
+    typed = []
+
+    def send(key, down):
+        if down:
+            typed.append(key.name)
+            if len(typed) == len("DDUR"):
+                shown.show(after)
+
+    monkeypatch.setattr(winkeys, "send", send)
+    lines = []
+    app = App(settings, log=lines.append, tone=lambda hz, ms: None)
+    for key in (app.call_key, winkeys.Key.named("2")):
+        app.on_event(Terminal.event(key, "down"))
+        if key is app.call_key:
+            assert wait_for(lambda: "Slots 1,2,3,4" in app.router.describe())
+        app.on_event(Terminal.event(key, "up"))
+    return app, lines, typed, after_region
+
+
+def test_a_call_the_game_did_not_take_saves_the_menu_region_and_logs_it(monkeypatch, tmp_path):
+    # After the Code is typed the menu is still open, with Slot 2's Code still showing.
+    app, lines, typed, after = call_slot_2(monkeypatch, tmp_path, "cream_arrows_four_slots")
+    try:
+        assert wait_for(lambda: [p for p in tmp_path.glob("*.png") if cv2.imread(str(p)) is not None])
+        assert typed == ["down", "down", "up", "right"]
+        (saved,) = tmp_path.glob("*.png")
+        assert np.array_equal(cv2.imread(str(saved)), after)
+        assert any("Call DDUR not taken" in line and saved.name in line for line in lines), lines
+    finally:
+        app.stop()
+
+
+def test_a_call_that_closes_the_menu_saves_nothing(monkeypatch, tmp_path):
+    app, lines, typed, _ = call_slot_2(monkeypatch, tmp_path, "menu_closed_bright_sky")
+    try:
+        assert wait_for(lambda: len(typed) == 4)
+        time.sleep(1.0)  # well past the check
+        assert list(tmp_path.iterdir()) == []
+        assert not any("not taken" in line for line in lines)
+    finally:
+        app.stop()
+
+
+def test_opening_the_menu_again_before_the_check_saves_nothing(monkeypatch, tmp_path):
+    # A quick next Call: the menu shows open because the player opened it again, not because the
+    # game refused the Code.
+    app, lines, typed, _ = call_slot_2(monkeypatch, tmp_path, "cream_arrows_four_slots", check_delay=0.3)
+    try:
+        assert wait_for(lambda: len(typed) == 4 and not app._sending.is_set())
+        app.on_event(Terminal.event(app.call_key, "down"))
+        app.on_event(Terminal.event(app.call_key, "up"))
+        time.sleep(1.5)  # well past the check, even with the new watch reading meanwhile
+        assert not any("not taken" in line for line in lines)
+        assert not list(tmp_path.glob("*-not-taken.png"))
+    finally:
+        app.stop()
+
+
+def test_a_direct_key_call_the_game_did_not_take_is_logged_too(monkeypatch, tmp_path):
+    # The screen shows an open menu throughout, so the Direct Key's Code did not close it.
+    monkeypatch.setattr(app_module, "FAILED_CALLS_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "CALL_CHECK_DELAY", 0.05)
+    screen, _ = menu_screen("cream_arrows_four_slots")
+    monkeypatch.setattr(app_module.mss, "MSS", lambda: StillScreen(screen))
+    settings = dataclasses.replace(load(ROOT / "settings.toml", ROOT / "codebook.toml"), keystroke_ms=(0, 0))
+    monkeypatch.setattr(winkeys, "foreground_title", lambda: settings.window_title)
+    monkeypatch.setattr(winkeys, "send", lambda key, down: None)
+    lines = []
+    app = App(settings, log=lines.append, tone=lambda hz, ms: None)
+    key = next(iter(app.router.direct_keys))
+    code = app.router.direct_keys[key]
+    app.on_event(Terminal.event(key, "down"))
+    app.on_event(Terminal.event(key, "up"))
+    try:
+        assert wait_for(lambda: any(f"Call {code} not taken" in line for line in lines)), lines
+    finally:
+        app.stop()
+
+
+class StillScreen:
+    """Stands in for mss: every grab is cut from the same full screen."""
+
+    def __init__(self, screen):
+        self.monitors = [None, {"left": 0, "top": 0, "width": screen.shape[1], "height": screen.shape[0]}]
+        self._screen = screen
+
+    def show(self, screen):
+        """From now on every grab is cut from `screen`."""
+        self._screen = screen
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def grab(self, area):
+        frame = grab(self._screen, area)
+        return np.concatenate([frame, np.full(frame.shape[:2] + (1,), 255, np.uint8)], axis=2)  # BGRA
+
+
+def test_a_read_code_saves_nothing(monkeypatch):
+    terminal = Terminal(monkeypatch, screen_with("drill_code_two_entered_angle_a"))
+    terminal.press_terminal_key()
+    terminal.wait_until_typed()
+    time.sleep(0.1)
+    assert list(terminal.failed_codes.iterdir()) == []
 
 
 def test_each_press_reads_the_code_afresh_and_nothing_is_retried(monkeypatch):

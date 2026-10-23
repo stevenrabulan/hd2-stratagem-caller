@@ -33,6 +33,12 @@ CASES = {
     "menu_closed_bright_sky": {},
     # 100 ms after the Call Key: rows are still sliding in from the left.
     "menu_sliding_in": {},
+    # Some games draw every callable arrow see-through: cream over dark ground, never pure white.
+    "cream_arrows_over_dark_ground": {4: WARP_PACK, 5: "DDULR", 6: "DURRL"},
+    "cream_arrows_four_slots": {1: "UDRLU", 2: RESUPPLY, 3: "DULDURDU", 4: "RDURD"},
+    # Brightness varies along a row: some arrows pass as pure white, the rest only as cream.
+    "mixed_white_and_cream_arrows_warp_pack": {2: RESUPPLY, 3: "RDURD", 4: "URR", 6: "DLRDLR"},
+    "mixed_white_and_cream_arrows_orbital_laser": {3: "RDURD", 6: "DDULR"},
 }
 
 
@@ -42,11 +48,21 @@ def test_reads_codes_by_slot(name):
     assert read_menu(region).codes == CASES[name]
 
 
-def test_partly_entered_code_is_not_read():
-    # The player has typed one direction: the first arrow of Slot 4 is yellow
-    # and the Stratagems that no longer match are dimmed.
+def test_white_arrows_followed_by_cream_ones_give_no_shortened_code():
+    # Quasar Cannon (Slot 6) is DDULR: its first two arrows show pure white over brighter
+    # ground, the last three cream over dark ground. Reading only the white ones gave DD.
+    reading = _read("cream_arrows_after_white_ones")
+    assert reading.codes.get(6) in (None, "DDULR")
+    assert reading.codes.get(6) == "DDULR" or 6 in reading.unreadable
+
+
+def test_partly_entered_code_reads_in_full():
+    # The player has typed one direction: the first arrows of Slot 4 show cream, the rest white,
+    # and the Stratagems that no longer match are dimmed. Cream and white arrows also mix along
+    # an untouched row, so the reader cannot tell the two apart and reads the whole Code. A
+    # Trigger Key then types it on top of the hand-typed start; the game rejects that input.
     region = cv2.imread(str(FIXTURES / "one_direction_entered.png"))
-    assert read_menu(region).codes == {}
+    assert read_menu(region).codes == {4: "RDURD"}
 
 
 def test_icon_is_returned_for_each_slot_whose_icon_is_in_place():

@@ -5,6 +5,7 @@ import random
 import threading
 import time
 import winsound
+from datetime import datetime
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from . import winkeys
 
 winkeys.make_dpi_aware()
 
+import cv2  # noqa: E402
 import keyboard  # noqa: E402
 import mss  # noqa: E402
 import numpy as np  # noqa: E402
@@ -46,11 +48,20 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG_PATH = ROOT / "logs" / "stratagem_caller.log"
 # Screen regions saved by the Mark Key. Under fixtures/raw/, so not in version control.
 MARKS_DIR = ROOT / "fixtures" / "raw" / "marks"
+# The region each failed Terminal Key read looked at, to compare with what the player saw.
+# Under logs/, so not in version control.
+FAILED_CODES_DIR = ROOT / "logs" / "failed_codes"
+# The menu region read when a Trigger Key beeped (Slot cannot be called), to see why.
+# Under logs/, so not in version control.
+FAILED_CALLS_DIR = ROOT / "logs" / "failed_calls"
 # Regions kept for a mark: about 1 to 3 s of watching (about 3.6 MB each at 4K).
 RECENT_REGIONS = 16
 
 # Reading the menu before it has started to slide in is wasted work.
 FIRST_READING_DELAY = 0.15
+# How long after a Call's last key the menu is read again. The game closes the menu once it
+# takes a Code, so a menu still open then means the Call did not go through.
+CALL_CHECK_DELAY = 0.5
 
 
 def _print_warning(text: str) -> None:
@@ -212,6 +223,8 @@ class App:
                             if not outcome.ends_watch:
                                 # A beep: keep reading while it sounds.
                                 threading.Thread(target=self._act, args=(outcome,), daemon=True).start()
+                                if outcome.kind is Kind.BEEP:
+                                    self._save_failed_call(region)
                             else:
                                 self._act(outcome, trigger)
                                 return
@@ -275,7 +288,9 @@ class App:
         started = time.perf_counter()
         try:
             with mss.MSS() as sct:
-                reading = _read_code(sct, sct.monitors[1])
+                monitor = sct.monitors[1]
+                region = np.asarray(sct.grab(code_area(monitor)))[:, :, :3]
+            reading = read_terminal_code(region, monitor["height"])
         except Exception as error:
             self._log(f"Terminal Key: reading the Code failed, {error!r}")
             self._beep_for_code()
@@ -283,14 +298,51 @@ class App:
         took = f"read in {(time.perf_counter() - started) * 1000:.0f} ms"
         if reading.status is not CodeStatus.READ:
             what = "unreadable" if reading.status is CodeStatus.UNREADABLE else "not on screen"
-            self._log(f"Terminal Key: Code {what}, {reading.why} ({took})")
+            path = FAILED_CODES_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]
+            path = path.with_suffix(".png")
+            self._log(f"Terminal Key: Code {what}, {reading.why} ({took}); region saved to {path.name}")
             self._beep_for_code()
+            # Off the send path: a 4K PNG takes a while to write.
+            threading.Thread(target=_save_region, args=(path, region, self._log), daemon=True).start()
         elif not reading.remaining:
             self._log(f"Terminal Key: Code {reading.code}, all {len(reading.code)} entered, nothing left to type ({took})")
         else:
             self._log(f"Terminal Key: Code {reading.code}, {reading.entered} entered, typing {reading.remaining} ({took})")
             with self._send_lock:
                 self._tap_code(reading.remaining, until_paused=True)
+
+    def _check_call(self, code: str) -> None:
+        """Read the menu once, CALL_CHECK_DELAY after a Call was typed. Still open means the game
+        did not take the Code: log it and keep the region. A Call Key press since (a new Arming
+        Window) means the player opened the menu again, which proves nothing either way."""
+        time.sleep(CALL_CHECK_DELAY)
+        if self.router.is_watching_menu():
+            return
+        try:
+            with mss.MSS() as sct:
+                monitor = sct.monitors[1]
+                region = np.asarray(sct.grab(_menu_area(monitor)))[:, :, :3]
+            reading = read_menu(region, monitor["height"])
+        except Exception as error:  # A failed check must not look like a failed Call.
+            self._log(f"Call {code}: check after typing failed, {error!r}")
+            return
+        if not reading.menu_open:
+            return
+        showing = sorted(slot for slot, shown in reading.codes.items() if shown == code)
+        where = f"Slots {','.join(map(str, showing))} still show it" if showing else "its Code no longer shows"
+        path = (FAILED_CALLS_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]).with_suffix(".png")
+        path = path.with_name(path.stem + "-not-taken.png")
+        self._log(
+            f"Call {code} not taken: menu still open {CALL_CHECK_DELAY:.1f} s later, {where}; "
+            f"menu region saved to {path.name}"
+        )
+        _save_region(path, region, self._log)
+
+    def _save_failed_call(self, region: np.ndarray) -> None:
+        """Keep the menu region a beeping Trigger Key was decided on, off the reading thread."""
+        path = (FAILED_CALLS_DIR / f"{datetime.now():%Y%m%d-%H%M%S-%f}"[:-3]).with_suffix(".png")
+        self._log(f"Slot cannot be called: menu region saved to {path.name}")
+        threading.Thread(target=_save_region, args=(path, region, self._log), daemon=True).start()
 
     def _beep_for_code(self) -> None:
         """The Terminal Key has no Code to enter: the Beep, and the Terminal Key's Key Cap flashes red
@@ -308,6 +360,9 @@ class App:
             return
         elif outcome.kind is Kind.CALL:
             self._type(outcome.code)
+            if not self.router.paused:
+                # Off the send, so the player's keys are their own again meanwhile.
+                threading.Thread(target=self._check_call, args=(outcome.code,), daemon=True).start()
         elif outcome.hands_back and trigger is not None:
             self._hand_back(trigger)
 
@@ -321,6 +376,8 @@ class App:
                 self._tap(self.call_key, gap=self.settings.direct_key_pause_ms)
             self._tap_code(code)
         self.router.close_window()
+        if not self.router.paused:
+            threading.Thread(target=self._check_call, args=(code,), daemon=True).start()
 
     def _type(self, code: str) -> None:
         with self._send_lock:
@@ -374,6 +431,15 @@ class App:
             self._tone(440 if self.router.paused else 880, 120)
             print("paused" if self.router.paused else "resumed")
         self.on_pause_change()
+
+
+def _save_region(path: Path, region: np.ndarray, log: Callable[[str], None]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not cv2.imwrite(str(path), region):
+            raise OSError("cv2.imwrite returned False")
+    except Exception as error:
+        log(f"could not save {path.name}, {error!r}")
 
 
 def _read_code(sct, monitor: dict) -> CodeReading:

@@ -358,6 +358,11 @@ class KeyRouter:
         self._log(f"watch ended: {reason}{suffix}; latest Reading: {reading}")
         return held
 
+    def is_watching_menu(self) -> bool:
+        """Whether an Arming Window is open: the player has pressed the Call Key again."""
+        with self._lock:
+            return self._window is not None and not self._window.done
+
     def is_current(self, window: ArmingWindow) -> bool:
         with self._lock:
             return self._window is window

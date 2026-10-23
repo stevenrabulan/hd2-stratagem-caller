@@ -60,26 +60,40 @@ def test_disagreeing_readings_are_not_trusted():
     assert s.see(OPEN, 0.34) == Outcome("call", "DLRDLR")
 
 
-def test_slot_that_cannot_be_called_beeps_at_once_and_a_second_key_is_accepted():
+def test_slot_that_cannot_be_called_beeps_on_the_next_reading_and_a_second_key_is_accepted():
     s = Script().open_for_a_while()
-    assert s.window.press(3, now=1.0) == Press(True, Outcome("beep"))
+    assert s.window.press(3, now=1.0) == Press(True, None)
+    assert s.see(OPEN, 1.05) == Outcome("beep")
     assert s.window.press(1, now=1.5) == Press(True, Outcome("call", "DDUR"))
+
+
+def test_slot_that_becomes_callable_as_its_key_is_pressed_is_called_not_beeped():
+    # The Readings so far say Slot 3 cannot be called, but it comes off cooldown just as its
+    # Trigger Key goes down: the Readings taken after the press decide.
+    s = Script().open_for_a_while()
+    assert s.window.press(3, now=1.0) == Press(True, None)
+    ready = Reading(codes={**CODES, 3: "URR"}, menu_open=True)
+    assert s.see(ready, 1.05) is None
+    assert s.see(ready, 1.1) == Outcome("call", "URR")
 
 
 def test_slot_beyond_the_last_beeps():
     s = Script().open_for_a_while()
-    assert s.window.press(9, now=1.0) == Press(True, Outcome("beep"))
+    assert s.window.press(9, now=1.0) == Press(True, None)
+    assert s.see(OPEN, 1.05) == Outcome("beep")
 
 
 def test_open_menu_with_nothing_callable_beeps():
     s = Script()
     assert s.see(ALL_ON_COOLDOWN, 0.3, 0.35, 0.6, 0.8) is None
-    assert s.window.press(1, now=0.85) == Press(True, Outcome("beep"))
+    assert s.window.press(1, now=0.85) == Press(True, None)
+    assert s.see(ALL_ON_COOLDOWN, 0.9) == Outcome("beep")
 
 
 def test_beeping_does_not_end_the_watch():
     s = Script().open_for_a_while()
     s.window.press(3, now=1.0)
+    assert s.see(OPEN, 1.05) == Outcome("beep")
     assert s.see(OPEN, 1.1, 1.2) is None
     assert s.window.press(2, now=1.3).outcome == Outcome("call", "DLRDLR")
 
@@ -529,7 +543,8 @@ def test_key_caps_hide_when_a_held_key_is_called_on_a_later_reading():
 
 def test_key_caps_stay_after_a_beep():
     s = key_cap_script()
-    assert s.window.press(3, now=1.0) == Press(True, Outcome("beep"))
+    assert s.window.press(3, now=1.0) == Press(True, None)
+    assert s.see(MENU_OF_FOUR, 1.05) == Outcome("beep")
     assert s.window.key_cap_slots() == {1, 2, 3, 4}
 
 
